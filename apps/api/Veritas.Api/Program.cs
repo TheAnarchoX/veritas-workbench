@@ -39,6 +39,13 @@ if (app.Configuration.GetValue("Database:ApplyMigrations", false))
     await db.Database.MigrateAsync();
 }
 
+if (app.Configuration.GetValue("Database:EnsureCreated", false))
+{
+    using var scope = app.Services.CreateScope();
+    var db = scope.ServiceProvider.GetRequiredService<VeritasDbContext>();
+    await db.Database.EnsureCreatedAsync();
+}
+
 if (app.Configuration.GetValue("Demo:SeedData", false))
 {
     using var scope = app.Services.CreateScope();

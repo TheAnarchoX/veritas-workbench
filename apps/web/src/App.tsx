@@ -1,6 +1,8 @@
 import {
+  Activity,
   AlertTriangle,
   Archive,
+  ArrowRight,
   BadgeCheck,
   CheckCircle2,
   ClipboardList,
@@ -15,11 +17,15 @@ import {
   Link as LinkIcon,
   ListChecks,
   Loader2,
+  Moon,
+  Network,
   Plus,
   RefreshCw,
+  Route as RouteIcon,
   Search,
   Settings,
   ShieldCheck,
+  Sun,
   Upload,
   Video,
 } from 'lucide-react'
@@ -54,6 +60,13 @@ type LoadState<T> = {
 }
 
 const tabs = ['Overview', 'Evidence', 'Sources', 'Findings', 'Claims', 'Tasks', 'Timeline', 'Report']
+type Theme = 'light' | 'dark'
+
+function getInitialTheme(): Theme {
+  if (typeof window === 'undefined') return 'dark'
+  const stored = window.localStorage.getItem('veritas-theme')
+  return stored === 'light' || stored === 'dark' ? stored : 'dark'
+}
 
 export default function App() {
   return (
@@ -74,22 +87,40 @@ export default function App() {
 }
 
 function Shell({ children }: { children: ReactNode }) {
+  const [theme, setTheme] = useState<Theme>(getInitialTheme)
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme
+    window.localStorage.setItem('veritas-theme', theme)
+  }, [theme])
+
+  const nextTheme = theme === 'dark' ? 'light' : 'dark'
+
   return (
-    <div className="min-h-screen bg-[#f6f6f3] text-zinc-900">
-      <header className="border-b border-zinc-300 bg-white">
+    <div className="app-shell min-h-screen bg-[#f6f6f3] text-zinc-900">
+      <header className="topbar border-b border-zinc-300 bg-white">
         <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
           <Link to="/projects" className="flex items-center gap-3">
-            <span className="grid h-9 w-9 place-items-center rounded-md bg-emerald-700 text-white">
+            <span className="brand-mark grid h-9 w-9 place-items-center rounded-md bg-emerald-700 text-white">
               <ShieldCheck size={19} aria-hidden="true" />
             </span>
             <span>
               <span className="block text-base font-semibold">Veritas Workbench</span>
-              <span className="block text-xs text-zinc-600">Provenance-first investigation workspace</span>
+              <span className="block text-xs text-zinc-600">OSINT media provenance desk</span>
             </span>
           </Link>
           <nav className="flex flex-wrap items-center gap-2 text-sm">
             <NavLink to="/projects" icon={<FolderKanban size={16} />}>Projects</NavLink>
             <NavLink to="/settings" icon={<Settings size={16} />}>Settings</NavLink>
+            <button
+              className="icon-btn"
+              type="button"
+              onClick={() => setTheme(nextTheme)}
+              aria-label={`Switch to ${nextTheme} mode`}
+              title={`Switch to ${nextTheme} mode`}
+            >
+              {theme === 'dark' ? <Sun size={16} aria-hidden="true" /> : <Moon size={16} aria-hidden="true" />}
+            </button>
           </nav>
         </div>
       </header>
@@ -324,7 +355,7 @@ export function DossierTabs({
 
   return (
     <div className="space-y-4">
-      <section className="rounded-md border border-zinc-300 bg-white p-4">
+      <section className="workspace-hero rounded-md border border-zinc-300 bg-white p-4">
         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <div>
             <div className="flex flex-wrap items-center gap-2">
@@ -346,62 +377,176 @@ export function DossierTabs({
         </div>
       </section>
 
-      <div className="flex gap-2 overflow-x-auto border-b border-zinc-300 pb-2" role="tablist" aria-label="dossier tabs">
-        {tabs.map((tab) => (
-          <button
-            key={tab}
-            type="button"
-            role="tab"
-            aria-selected={activeTab === tab}
-            className={`h-9 shrink-0 rounded-md border px-3 text-sm ${activeTab === tab ? 'border-emerald-700 bg-emerald-700 text-white' : 'border-zinc-300 bg-white text-zinc-800'}`}
-            onClick={() => onTab?.(tab)}
-          >
-            {tab} {tab in counts ? <span className="ml-1 opacity-80">{counts[tab as keyof typeof counts]}</span> : null}
-          </button>
-        ))}
-      </div>
+      <div className="grid gap-4 xl:grid-cols-[280px_1fr]">
+        <WorkflowRail bundle={bundle} activeTab={activeTab} onTab={onTab} />
+        <div className="min-w-0 space-y-4">
+          <div className="flex gap-2 overflow-x-auto border-b border-zinc-300 pb-2" role="tablist" aria-label="dossier tabs">
+            {tabs.map((tab) => (
+              <button
+                key={tab}
+                type="button"
+                role="tab"
+                aria-selected={activeTab === tab}
+                className={`h-9 shrink-0 rounded-md border px-3 text-sm ${activeTab === tab ? 'border-emerald-700 bg-emerald-700 text-white' : 'border-zinc-300 bg-white text-zinc-800'}`}
+                onClick={() => onTab?.(tab)}
+              >
+                {tab} {tab in counts ? <span className="ml-1 opacity-80">{counts[tab as keyof typeof counts]}</span> : null}
+              </button>
+            ))}
+          </div>
 
-      {activeTab === 'Overview' && <OverviewTab bundle={bundle} />}
-      {activeTab === 'Evidence' && <EvidenceTab dossierId={bundle.dossier.id} evidence={bundle.evidence} onRefresh={onRefresh} />}
-      {activeTab === 'Sources' && <SourcesTab dossierId={bundle.dossier.id} sources={bundle.sources} onRefresh={onRefresh} />}
-      {activeTab === 'Findings' && <FindingsTab findings={bundle.findings} />}
-      {activeTab === 'Claims' && <ClaimsTab dossierId={bundle.dossier.id} claims={bundle.claims} onRefresh={onRefresh} />}
-      {activeTab === 'Tasks' && <TasksTab dossierId={bundle.dossier.id} tasks={bundle.tasks} onRefresh={onRefresh} />}
-      {activeTab === 'Timeline' && <TimelineTab dossierId={bundle.dossier.id} timeline={bundle.timeline} onRefresh={onRefresh} />}
-      {activeTab === 'Report' && <InlineReport dossierId={bundle.dossier.id} />}
+          {activeTab === 'Overview' && <OverviewTab bundle={bundle} onTab={onTab} />}
+          {activeTab === 'Evidence' && <EvidenceTab dossierId={bundle.dossier.id} evidence={bundle.evidence} sources={bundle.sources} onRefresh={onRefresh} />}
+          {activeTab === 'Sources' && <SourcesTab dossierId={bundle.dossier.id} sources={bundle.sources} evidence={bundle.evidence} onRefresh={onRefresh} />}
+          {activeTab === 'Findings' && <FindingsTab findings={bundle.findings} />}
+          {activeTab === 'Claims' && <ClaimsTab dossierId={bundle.dossier.id} claims={bundle.claims} onRefresh={onRefresh} />}
+          {activeTab === 'Tasks' && <TasksTab dossierId={bundle.dossier.id} tasks={bundle.tasks} onRefresh={onRefresh} />}
+          {activeTab === 'Timeline' && <TimelineTab dossierId={bundle.dossier.id} timeline={bundle.timeline} onRefresh={onRefresh} />}
+          {activeTab === 'Report' && <InlineReport dossierId={bundle.dossier.id} />}
+        </div>
+      </div>
     </div>
   )
 }
 
-function OverviewTab({ bundle }: { bundle: DossierBundle }) {
+function getRunStats(bundle: DossierBundle) {
+  const runs = bundle.evidence.flatMap((item) => item.analysisRuns)
+  return {
+    runs,
+    completed: runs.filter((run) => run.status === 'Completed').length,
+    running: runs.filter((run) => run.status === 'Running' || run.status === 'Pending').length,
+    failed: runs.filter((run) => run.status === 'Failed').length,
+  }
+}
+
+function WorkflowRail({ bundle, activeTab, onTab }: { bundle: DossierBundle; activeTab: string; onTab?: (tab: string) => void }) {
+  const openTasks = bundle.tasks.filter((task) => task.status !== 'Done').length
+  const runStats = getRunStats(bundle)
+  const steps = [
+    { label: '1. Intake', tab: 'Sources', icon: <Search size={16} />, metric: `${bundle.sources.length} sources`, ready: bundle.sources.length > 0 },
+    { label: '2. Preserve', tab: 'Evidence', icon: <Database size={16} />, metric: `${bundle.evidence.length} evidence`, ready: bundle.evidence.length > 0 },
+    { label: '3. Analyze', tab: 'Evidence', icon: <Activity size={16} />, metric: `${runStats.completed}/${runStats.runs.length} complete`, ready: runStats.completed > 0 },
+    { label: '4. Corroborate', tab: 'Findings', icon: <Network size={16} />, metric: `${bundle.findings.length} findings`, ready: bundle.findings.length > 0 },
+    { label: '5. Report', tab: 'Report', icon: <FileText size={16} />, metric: `${openTasks} open tasks`, ready: bundle.claims.length > 0 && openTasks === 0 },
+  ]
+
+  return (
+    <aside className="workflow-rail rounded-md border border-zinc-300 bg-white p-3">
+      <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-zinc-800">
+        <RouteIcon size={16} className="text-emerald-800" aria-hidden="true" />
+        Workflow
+      </div>
+      <div className="space-y-2">
+        {steps.map((step) => (
+          <button
+            key={step.label}
+            type="button"
+            className={`workflow-step w-full rounded-md border p-3 text-left ${activeTab === step.tab ? 'border-emerald-700 bg-emerald-700 text-white' : 'border-zinc-300 bg-white text-zinc-800'}`}
+            onClick={() => onTab?.(step.tab)}
+          >
+            <span className="flex items-center justify-between gap-3">
+              <span className="flex min-w-0 items-center gap-2">
+                {step.icon}
+                <span className="truncate text-sm font-semibold">{step.label}</span>
+              </span>
+              <Badge tone={step.ready ? 'green' : 'zinc'}>{step.ready ? 'active' : 'open'}</Badge>
+            </span>
+            <span className="mt-2 block text-xs opacity-80">{step.metric}</span>
+          </button>
+        ))}
+      </div>
+    </aside>
+  )
+}
+
+function OverviewTab({ bundle, onTab }: { bundle: DossierBundle; onTab?: (tab: string) => void }) {
   const openTasks = bundle.tasks.filter((task) => task.status !== 'Done').length
   const highConfidence = bundle.findings.filter((finding) => finding.confidence === 'High').length
+  const runStats = getRunStats(bundle)
+  const sourceLinkedEvidence = bundle.evidence.filter((item) => item.sourceId).length
+  const latestEvidence = bundle.evidence.slice(0, 5)
+
   return (
-    <div className="grid gap-4 lg:grid-cols-4">
-      <Metric label="Evidence" value={bundle.evidence.length} icon={<Database size={17} />} />
-      <Metric label="Sources" value={bundle.sources.length} icon={<LinkIcon size={17} />} />
-      <Metric label="Open tasks" value={openTasks} icon={<ListChecks size={17} />} />
-      <Metric label="High confidence findings" value={highConfidence} icon={<BadgeCheck size={17} />} />
-      <Panel title="Recent Findings" icon={<Gauge size={17} />} className="lg:col-span-2">
-        <div className="space-y-2">
+    <div className="space-y-4">
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <Metric label="Evidence" value={bundle.evidence.length} icon={<Database size={17} />} />
+        <Metric label="Linked sources" value={sourceLinkedEvidence} icon={<LinkIcon size={17} />} />
+        <Metric label="Open tasks" value={openTasks} icon={<ListChecks size={17} />} />
+        <Metric label="High confidence findings" value={highConfidence} icon={<BadgeCheck size={17} />} />
+      </div>
+
+      <Panel title="Case Flow" icon={<RouteIcon size={17} />}>
+        <div className="workflow-map grid gap-2 md:grid-cols-5">
+          <FlowNode label="Source" value={bundle.sources.length} icon={<Search size={16} />} onClick={() => onTab?.('Sources')} />
+          <FlowNode label="Evidence" value={bundle.evidence.length} icon={<Database size={16} />} onClick={() => onTab?.('Evidence')} />
+          <FlowNode label="Runs" value={runStats.completed} suffix={`/${runStats.runs.length}`} icon={<Activity size={16} />} onClick={() => onTab?.('Evidence')} />
+          <FlowNode label="Findings" value={bundle.findings.length} icon={<Gauge size={16} />} onClick={() => onTab?.('Findings')} />
+          <FlowNode label="Report" value={bundle.claims.length} icon={<FileText size={16} />} onClick={() => onTab?.('Report')} />
+        </div>
+      </Panel>
+
+      <div className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
+        <Panel title="Evidence Matrix" icon={<Network size={17} />}>
+          <div className="space-y-2">
+            {latestEvidence.map((item) => {
+              const latestRun = item.analysisRuns[0]
+              return (
+                <Link key={item.id} to={`/dossiers/${item.dossierId}/evidence/${item.id}`} className="matrix-row rounded-md border border-zinc-300 bg-white p-3 hover:border-emerald-700">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge>{item.type}</Badge>
+                    <Badge tone={item.sourceId ? 'green' : 'amber'}>{item.sourceId ? 'source linked' : 'unlinked source'}</Badge>
+                    <Badge tone={latestRun?.status === 'Completed' ? 'green' : latestRun ? 'amber' : 'zinc'}>{latestRun?.status ?? 'not analyzed'}</Badge>
+                  </div>
+                  <div className="mt-2 flex items-center justify-between gap-3">
+                    <span className="truncate text-sm font-semibold">{item.title}</span>
+                    <ArrowRight size={15} aria-hidden="true" />
+                  </div>
+                  <p className="mt-1 truncate font-mono text-xs text-zinc-600">{item.contentHashSha256 || 'hash pending'}</p>
+                </Link>
+              )
+            })}
+            {bundle.evidence.length === 0 && <Empty text="No evidence uploaded." />}
+          </div>
+        </Panel>
+        <Panel title="Control Queue" icon={<ClipboardList size={17} />}>
+          <div className="space-y-2">
+            {bundle.tasks.slice(0, 6).map((task) => <TaskRow key={task.id} task={task} />)}
+            {bundle.tasks.length === 0 && <Empty text="No tasks yet." />}
+          </div>
+        </Panel>
+      </div>
+
+      <Panel title="Recent Findings" icon={<Gauge size={17} />}>
+        <div className="grid gap-2 lg:grid-cols-2">
           {bundle.findings.slice(0, 4).map((finding) => <FindingCard key={finding.id} finding={finding} />)}
           {bundle.findings.length === 0 && <Empty text="No findings yet." />}
         </div>
       </Panel>
-      <Panel title="Next Tasks" icon={<ClipboardList size={17} />} className="lg:col-span-2">
-        <div className="space-y-2">
-          {bundle.tasks.slice(0, 6).map((task) => <TaskRow key={task.id} task={task} />)}
-          {bundle.tasks.length === 0 && <Empty text="No tasks yet." />}
-        </div>
-      </Panel>
     </div>
   )
 }
 
-function EvidenceTab({ dossierId, evidence, onRefresh }: { dossierId: string; evidence: EvidenceItem[]; onRefresh?: () => void }) {
+function FlowNode({ label, value, suffix = '', icon, onClick }: { label: string; value: number; suffix?: string; icon: ReactNode; onClick?: () => void }) {
+  return (
+    <button className="flow-node rounded-md border border-zinc-300 bg-white p-3 text-left hover:border-emerald-700" type="button" onClick={onClick}>
+      <span className="flex items-center justify-between gap-3 text-sm text-zinc-600">
+        <span className="flex items-center gap-2">
+          {icon}
+          {label}
+        </span>
+        <ArrowRight size={14} aria-hidden="true" />
+      </span>
+      <span className="mt-3 block text-2xl font-semibold text-zinc-900">
+        {value}<span className="text-sm text-zinc-500">{suffix}</span>
+      </span>
+    </button>
+  )
+}
+
+function EvidenceTab({ dossierId, evidence, sources, onRefresh }: { dossierId: string; evidence: EvidenceItem[]; sources: Source[]; onRefresh?: () => void }) {
   return (
     <div className="grid gap-4 lg:grid-cols-[380px_1fr]">
-      <UploadEvidenceForm dossierId={dossierId} onUploaded={onRefresh} />
+      <UploadEvidenceForm dossierId={dossierId} sources={sources} onUploaded={onRefresh} />
       <Panel title="Evidence Inventory" icon={<Database size={17} />}>
         <div className="grid gap-2">
           {evidence.map((item) => <EvidenceRow key={item.id} item={item} />)}
@@ -412,10 +557,11 @@ function EvidenceTab({ dossierId, evidence, onRefresh }: { dossierId: string; ev
   )
 }
 
-export function UploadEvidenceForm({ dossierId, onUploaded }: { dossierId: string; onUploaded?: () => void }) {
+export function UploadEvidenceForm({ dossierId, sources = [], onUploaded }: { dossierId: string; sources?: Source[]; onUploaded?: () => void }) {
   const [file, setFile] = useState<File | null>(null)
   const [title, setTitle] = useState('')
   const [provenanceStatus, setProvenanceStatus] = useState('Unknown')
+  const [sourceId, setSourceId] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
@@ -430,11 +576,13 @@ export function UploadEvidenceForm({ dossierId, onUploaded }: { dossierId: strin
     form.set('file', file)
     form.set('title', title || file.name)
     form.set('provenanceStatus', provenanceStatus)
+    if (sourceId) form.set('sourceId', sourceId)
     setBusy(true)
     try {
       await postForm(`/dossiers/${dossierId}/evidence/upload`, form)
       setFile(null)
       setTitle('')
+      setSourceId('')
       onUploaded?.()
     } catch (err) {
       setError(String(err))
@@ -456,6 +604,14 @@ export function UploadEvidenceForm({ dossierId, onUploaded }: { dossierId: strin
             <option>PlatformOriginal</option>
             <option>ScreenshotOnly</option>
             <option>Recompressed</option>
+          </select>
+        </Field>
+        <Field label="Linked source">
+          <select className="input" value={sourceId} onChange={(event) => setSourceId(event.target.value)}>
+            <option value="">No source link</option>
+            {sources.map((source) => (
+              <option key={source.id} value={source.id}>{source.platform || source.type}: {source.title || source.url}</option>
+            ))}
           </select>
         </Field>
         <Field label="File">
@@ -497,7 +653,7 @@ function EvidenceRow({ item }: { item: EvidenceItem }) {
   )
 }
 
-function SourcesTab({ dossierId, sources, onRefresh }: { dossierId: string; sources: Source[]; onRefresh?: () => void }) {
+function SourcesTab({ dossierId, sources, evidence, onRefresh }: { dossierId: string; sources: Source[]; evidence: EvidenceItem[]; onRefresh?: () => void }) {
   const [url, setUrl] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -542,6 +698,9 @@ function SourcesTab({ dossierId, sources, onRefresh }: { dossierId: string; sour
               <div className="flex flex-wrap items-center gap-2">
                 <Badge>{source.platform || source.type}</Badge>
                 <Badge tone={source.collectionStatus.includes('Blocked') || source.collectionStatus.includes('Requires') ? 'amber' : 'green'}>{source.collectionStatus}</Badge>
+                <Badge tone={evidence.some((item) => item.sourceId === source.id) ? 'green' : 'zinc'}>
+                  {evidence.filter((item) => item.sourceId === source.id).length} evidence
+                </Badge>
               </div>
               <p className="mt-2 break-all text-sm font-medium">{source.url || source.title}</p>
               <p className="mt-1 text-sm text-zinc-600">{source.notes}</p>

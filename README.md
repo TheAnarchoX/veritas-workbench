@@ -21,6 +21,30 @@ Requirements:
 - PostgreSQL, or Docker Compose
 - Optional: `ffmpeg`/`ffprobe` for video analysis
 
+The easiest local path is:
+
+```bash
+make install
+make dev-up
+```
+
+This starts the API on http://127.0.0.1:8080 with SQLite under `data/veritas-dev.db` and the web UI on http://127.0.0.1:5173. Stop it with:
+
+```bash
+make dev-down
+```
+
+If GNU Make is not installed on Windows, run the underlying scripts directly:
+
+```powershell
+dotnet tool restore
+dotnet restore Veritas.Workbench.slnx
+Push-Location workers/forensics; python -m pip install -e ".[dev]"; Pop-Location
+Push-Location apps/web; npm install; Pop-Location
+.\scripts\dev-up.ps1
+.\scripts\dev-down.ps1
+```
+
 Install and test the worker:
 
 ```bash
@@ -50,7 +74,7 @@ Set `VITE_API_BASE_URL=http://localhost:8080/api` if your API is on port 8080.
 ## Docker Compose
 
 ```bash
-docker compose up --build
+make docker-up
 ```
 
 Then open:
@@ -59,6 +83,13 @@ Then open:
 - API: http://localhost:8080/api/health
 
 Docker Compose starts PostgreSQL, applies EF migrations, seeds optional synthetic demo data, and mounts local storage under `data/storage`.
+The Docker Make target runs a daemon preflight first so a broken Docker Desktop state fails quickly instead of hanging during Compose.
+
+Stop Docker services with:
+
+```bash
+make docker-down
+```
 
 ## Basic Workflow
 
@@ -76,9 +107,7 @@ Docker Compose starts PostgreSQL, applies EF migrations, seeds optional syntheti
 ## Tests
 
 ```bash
-dotnet test Veritas.Workbench.slnx
-cd workers/forensics && python -m pytest
-cd apps/web && npm test && npm run build
+make test
 ```
 
 ## What This Is Not

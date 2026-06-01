@@ -20,11 +20,14 @@ public sealed class RobotsPolicyService(HttpClient httpClient, VeritasDbContext 
         var cacheKeyUri = uri.GetLeftPart(UriPartial.Path);
         var now = DateTimeOffset.UtcNow;
 
-        var cached = await db.RobotsCacheEntries
+        var cachedEntries = await db.RobotsCacheEntries
             .AsNoTracking()
-            .Where(x => x.Host == uri.Host && x.UserAgent == agent && x.Uri == cacheKeyUri && x.ExpiresAt > now)
+            .Where(x => x.Host == uri.Host && x.UserAgent == agent && x.Uri == cacheKeyUri)
+            .ToListAsync(ct);
+        var cached = cachedEntries
+            .Where(x => x.ExpiresAt > now)
             .OrderByDescending(x => x.CheckedAt)
-            .FirstOrDefaultAsync(ct);
+            .FirstOrDefault();
 
         if (cached is not null)
         {

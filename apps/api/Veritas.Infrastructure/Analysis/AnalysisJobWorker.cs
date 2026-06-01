@@ -11,9 +11,11 @@ namespace Veritas.Infrastructure.Analysis;
 public sealed class AnalysisJobWorker(
     IServiceScopeFactory scopeFactory,
     IOptions<AnalysisOptions> options,
+    IOptions<ForensicsOptions> forensicsOptions,
     ILogger<AnalysisJobWorker> logger) : BackgroundService
 {
     private readonly AnalysisOptions _options = options.Value;
+    private readonly ForensicsOptions _forensicsOptions = forensicsOptions.Value;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -24,14 +26,24 @@ public sealed class AnalysisJobWorker(
                 using var scope = scopeFactory.CreateScope();
                 var db = scope.ServiceProvider.GetRequiredService<VeritasDbContext>();
                 var processor = scope.ServiceProvider.GetRequiredService<AnalysisRunProcessor>();
-                var pendingRuns = await db.AnalysisRuns
-                    .Where(x => x.Status == AnalysisStatus.Pending)
+                var staleRunningCutoff = DateTimeOffset.UtcNow.AddSeconds(-Math.Max(5, _forensicsOptions.TimeoutSeconds));
+                var candidateRuns = await db.AnalysisRuns
+                    .Where(x => x.Status == AnalysisStatus.Pending || x.Status == AnalysisStatus.Running)
                     .ToListAsync(stoppingToken);
-                var run = pendingRuns.OrderBy(x => x.StartedAt).FirstOrDefault();
+                var runs = candidateRuns
+                    .Where(x => x.Status == AnalysisStatus.Pending || (x.StartedAt ?? DateTimeOffset.MinValue) <= staleRunningCutoff)
+                    .OrderBy(x => x.Status == AnalysisStatus.Running ? 0 : 1)
+                    .ThenBy(x => x.StartedAt ?? DateTimeOffset.MinValue)
+                    .Take(25)
+                    .ToList();
 
-                if (run is not null)
+                foreach (var run in runs)
                 {
                     await processor.ProcessAsync(run.Id, stoppingToken);
+                }
+
+                if (runs.Count > 0)
+                {
                     continue;
                 }
             }

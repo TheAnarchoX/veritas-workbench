@@ -16,6 +16,11 @@ __pycache__/
 *.egg-info/
 
 # Local data
+data/logs/
+data/smoke/
+data/*.db
+data/*.db-shm
+data/*.db-wal
 data/storage/originals/*
 data/storage/artifacts/*
 data/storage/reports/*

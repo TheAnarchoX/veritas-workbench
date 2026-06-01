@@ -1,6 +1,22 @@
 @import "tailwindcss";
 
 :root {
+  --app-bg: #f6f6f3;
+  --surface: #ffffff;
+  --surface-muted: #fbfbf8;
+  --surface-subtle: #f4f4f1;
+  --text: #18181b;
+  --text-strong: #09090b;
+  --muted: #52525b;
+  --muted-soft: #71717a;
+  --border: #d4d4d8;
+  --accent: #047857;
+  --accent-strong: #065f46;
+  --accent-soft: #d1fae5;
+  --warning: #92400e;
+  --warning-bg: #fffbeb;
+  --warning-border: #fcd34d;
+  color-scheme: light;
   font-family:
     Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
     sans-serif;
@@ -12,9 +28,29 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+:root[data-theme="dark"] {
+  --app-bg: #0d100f;
+  --surface: #141917;
+  --surface-muted: #101412;
+  --surface-subtle: #1b211e;
+  --text: #e9eee9;
+  --text-strong: #f7faf7;
+  --muted: #a8b3ac;
+  --muted-soft: #87928c;
+  --border: #2e3934;
+  --accent: #34d399;
+  --accent-strong: #10b981;
+  --accent-soft: #0f3328;
+  --warning: #fbbf24;
+  --warning-bg: #2b2110;
+  --warning-border: #8a6a22;
+  color-scheme: dark;
+}
+
 body {
   margin: 0;
   min-width: 320px;
+  background: var(--app-bg);
 }
 
 button,
@@ -40,6 +76,9 @@ a {
 @layer components {
   .input {
     @apply w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 outline-none focus:border-emerald-700 focus:ring-2 focus:ring-emerald-200;
+    background: var(--surface);
+    border-color: var(--border);
+    color: var(--text);
   }
 
   .btn-primary {
@@ -48,9 +87,129 @@ a {
 
   .btn-secondary {
     @apply inline-flex h-9 items-center justify-center gap-2 rounded-md border border-zinc-300 bg-white px-3 text-sm font-medium text-zinc-800 hover:border-emerald-700;
+    background: var(--surface);
+    border-color: var(--border);
+    color: var(--text);
   }
 
   .icon-btn {
     @apply inline-grid h-8 w-8 place-items-center rounded-md border border-zinc-300 bg-white text-zinc-700 hover:border-emerald-700;
+    background: var(--surface);
+    border-color: var(--border);
+    color: var(--text);
+  }
+}
+
+.app-shell {
+  background: var(--app-bg);
+  color: var(--text);
+}
+
+:root[data-theme="dark"] .app-shell {
+  background-image:
+    linear-gradient(rgba(52, 211, 153, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(56, 189, 248, 0.04) 1px, transparent 1px);
+  background-size: 34px 34px;
+}
+
+.topbar {
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  border-color: var(--border);
+  backdrop-filter: blur(10px);
+}
+
+.brand-mark {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent), 0 0 22px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.workspace-hero,
+.workflow-rail,
+.flow-node,
+.matrix-row {
+  background: var(--surface);
+  border-color: var(--border);
+}
+
+.workflow-rail {
+  position: sticky;
+  top: 1rem;
+  align-self: start;
+}
+
+.workflow-step {
+  min-height: 76px;
+}
+
+.flow-node {
+  min-height: 112px;
+}
+
+.flow-node:hover,
+.matrix-row:hover {
+  border-color: var(--accent);
+}
+
+:root[data-theme="dark"] .bg-white,
+:root[data-theme="dark"] .bg-\[\#fbfbf8\] {
+  background-color: var(--surface);
+}
+
+:root[data-theme="dark"] .bg-\[\#f6f6f3\],
+:root[data-theme="dark"] .bg-zinc-50,
+:root[data-theme="dark"] .bg-zinc-100 {
+  background-color: var(--surface-subtle);
+}
+
+:root[data-theme="dark"] .border-zinc-200,
+:root[data-theme="dark"] .border-zinc-300 {
+  border-color: var(--border);
+}
+
+:root[data-theme="dark"] .text-zinc-900,
+:root[data-theme="dark"] .text-zinc-800,
+:root[data-theme="dark"] .text-zinc-700 {
+  color: var(--text);
+}
+
+:root[data-theme="dark"] .text-zinc-600,
+:root[data-theme="dark"] .text-zinc-500 {
+  color: var(--muted);
+}
+
+:root[data-theme="dark"] .text-emerald-800 {
+  color: var(--accent);
+}
+
+:root[data-theme="dark"] .bg-emerald-50 {
+  background-color: var(--accent-soft);
+}
+
+:root[data-theme="dark"] .border-emerald-300 {
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+:root[data-theme="dark"] .text-emerald-900 {
+  color: #c7f9dd;
+}
+
+:root[data-theme="dark"] .bg-amber-50 {
+  background-color: var(--warning-bg);
+}
+
+:root[data-theme="dark"] .border-amber-300 {
+  border-color: var(--warning-border);
+}
+
+:root[data-theme="dark"] .text-amber-950 {
+  color: #fde68a;
+}
+
+:root[data-theme="dark"] .file\:bg-zinc-800::file-selector-button {
+  background-color: #24302b;
+}
+
+@media (max-width: 1279px) {
+  .workflow-rail {
+    position: static;
   }
 }
