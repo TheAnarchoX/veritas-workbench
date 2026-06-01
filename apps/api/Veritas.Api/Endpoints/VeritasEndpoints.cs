@@ -23,8 +23,8 @@ public static class VeritasEndpoints
 
         api.MapGet("/projects", async (VeritasDbContext db, CancellationToken ct) =>
         {
-            var projects = await db.Projects.Include(x => x.Dossiers).OrderByDescending(x => x.UpdatedAt).ToListAsync(ct);
-            return Results.Ok(projects.Select(ProjectDto.From));
+            var projects = await db.Projects.Include(x => x.Dossiers).ToListAsync(ct);
+            return Results.Ok(projects.OrderByDescending(x => x.UpdatedAt).Select(ProjectDto.From));
         });
 
         api.MapPost("/projects", async (CreateProjectRequest request, VeritasDbContext db, CancellationToken ct) =>
@@ -48,8 +48,8 @@ public static class VeritasEndpoints
 
         api.MapGet("/projects/{projectId:guid}/dossiers", async (Guid projectId, VeritasDbContext db, CancellationToken ct) =>
         {
-            var dossiers = await db.Dossiers.Where(x => x.ProjectId == projectId).OrderByDescending(x => x.UpdatedAt).ToListAsync(ct);
-            return Results.Ok(dossiers.Select(DossierDto.From));
+            var dossiers = await db.Dossiers.Where(x => x.ProjectId == projectId).ToListAsync(ct);
+            return Results.Ok(dossiers.OrderByDescending(x => x.UpdatedAt).Select(DossierDto.From));
         });
 
         api.MapPost("/projects/{projectId:guid}/dossiers", async (Guid projectId, CreateDossierRequest request, VeritasDbContext db, CancellationToken ct) =>
@@ -99,8 +99,8 @@ public static class VeritasEndpoints
         api.MapPost("/dossiers/{id:guid}/sources/url", AddUrlSourceAsync);
         api.MapGet("/dossiers/{id:guid}/sources", async (Guid id, VeritasDbContext db, CancellationToken ct) =>
         {
-            var sources = await db.Sources.Where(x => x.DossierId == id).OrderByDescending(x => x.ObservedAt).ToListAsync(ct);
-            return Results.Ok(sources.Select(SourceDto.From));
+            var sources = await db.Sources.Where(x => x.DossierId == id).ToListAsync(ct);
+            return Results.Ok(sources.OrderByDescending(x => x.ObservedAt).Select(SourceDto.From));
         });
 
         api.MapPost("/dossiers/{id:guid}/evidence/upload", UploadEvidenceAsync)
@@ -110,9 +110,8 @@ public static class VeritasEndpoints
             var evidence = await db.EvidenceItems
                 .Include(x => x.AnalysisRuns).ThenInclude(x => x.Artifacts)
                 .Where(x => x.DossierId == id)
-                .OrderByDescending(x => x.CreatedAt)
                 .ToListAsync(ct);
-            return Results.Ok(evidence.Select(EvidenceDto.From));
+            return Results.Ok(evidence.OrderByDescending(x => x.CreatedAt).Select(EvidenceDto.From));
         });
         api.MapGet("/evidence/{id:guid}", async (Guid id, VeritasDbContext db, CancellationToken ct) =>
         {
@@ -151,38 +150,38 @@ public static class VeritasEndpoints
 
         api.MapGet("/evidence/{id:guid}/analysis-runs", async (Guid id, VeritasDbContext db, CancellationToken ct) =>
         {
-            var runs = await db.AnalysisRuns.Include(x => x.Artifacts).Where(x => x.EvidenceItemId == id).OrderByDescending(x => x.StartedAt).ToListAsync(ct);
-            return Results.Ok(runs.Select(AnalysisRunDto.From));
+            var runs = await db.AnalysisRuns.Include(x => x.Artifacts).Where(x => x.EvidenceItemId == id).ToListAsync(ct);
+            return Results.Ok(runs.OrderByDescending(x => x.StartedAt).Select(AnalysisRunDto.From));
         });
         api.MapGet("/analysis-artifacts/{id:guid}", DownloadArtifactAsync);
 
         api.MapGet("/dossiers/{id:guid}/findings", async (Guid id, VeritasDbContext db, CancellationToken ct) =>
         {
-            var findings = await db.Findings.Where(x => x.DossierId == id).OrderByDescending(x => x.CreatedAt).ToListAsync(ct);
-            return Results.Ok(findings.Select(FindingDto.From));
+            var findings = await db.Findings.Where(x => x.DossierId == id).ToListAsync(ct);
+            return Results.Ok(findings.OrderByDescending(x => x.CreatedAt).Select(FindingDto.From));
         });
         api.MapPost("/dossiers/{id:guid}/findings", CreateFindingAsync);
 
         api.MapGet("/dossiers/{id:guid}/claims", async (Guid id, VeritasDbContext db, CancellationToken ct) =>
         {
-            var claims = await db.Claims.Where(x => x.DossierId == id).OrderBy(x => x.CreatedAt).ToListAsync(ct);
-            return Results.Ok(claims.Select(ClaimDto.From));
+            var claims = await db.Claims.Where(x => x.DossierId == id).ToListAsync(ct);
+            return Results.Ok(claims.OrderBy(x => x.CreatedAt).Select(ClaimDto.From));
         });
         api.MapPost("/dossiers/{id:guid}/claims", CreateClaimAsync);
         api.MapPatch("/claims/{id:guid}", PatchClaimAsync);
 
         api.MapGet("/dossiers/{id:guid}/tasks", async (Guid id, VeritasDbContext db, CancellationToken ct) =>
         {
-            var tasks = await db.InvestigationTasks.Where(x => x.DossierId == id).OrderByDescending(x => x.Priority).ThenBy(x => x.CreatedAt).ToListAsync(ct);
-            return Results.Ok(tasks.Select(InvestigationTaskDto.From));
+            var tasks = await db.InvestigationTasks.Where(x => x.DossierId == id).ToListAsync(ct);
+            return Results.Ok(tasks.OrderByDescending(x => x.Priority).ThenBy(x => x.CreatedAt).Select(InvestigationTaskDto.From));
         });
         api.MapPost("/dossiers/{id:guid}/tasks", CreateTaskAsync);
         api.MapPatch("/tasks/{id:guid}", PatchTaskAsync);
 
         api.MapGet("/dossiers/{id:guid}/timeline", async (Guid id, VeritasDbContext db, CancellationToken ct) =>
         {
-            var entries = await db.TimelineEntries.Where(x => x.DossierId == id).OrderBy(x => x.Time).ToListAsync(ct);
-            return Results.Ok(entries.Select(TimelineEntryDto.From));
+            var entries = await db.TimelineEntries.Where(x => x.DossierId == id).ToListAsync(ct);
+            return Results.Ok(entries.OrderBy(x => x.Time).Select(TimelineEntryDto.From));
         });
         api.MapPost("/dossiers/{id:guid}/timeline", CreateTimelineEntryAsync);
 

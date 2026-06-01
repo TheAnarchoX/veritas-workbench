@@ -9,6 +9,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Hosting;
 using Veritas.Application.Policies;
 using Veritas.Domain;
 using Veritas.Domain.Entities;
@@ -185,6 +186,7 @@ public sealed class ApiIntegrationTests
             builder.ConfigureServices(services =>
             {
                 services.RemoveAll<IRobotsPolicyService>();
+                services.RemoveAll<IHostedService>();
                 services.AddSingleton<IRobotsPolicyService>(new FakeRobotsPolicyService(robotsAllowed));
             });
         }

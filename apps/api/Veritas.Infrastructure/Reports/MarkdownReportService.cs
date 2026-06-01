@@ -31,7 +31,7 @@ public sealed class MarkdownReportService(VeritasDbContext db) : IReportService
         sb.AppendLine(Blank(dossier.Summary, "This report is generated from the current dossier state. Findings support or weaken claims but do not establish attribution without sufficient provenance."));
         sb.AppendLine();
         sb.AppendLine("## Scope and limitations");
-        sb.AppendLine("This workspace supports media provenance, artifact review, source chronology, and conservative claim assessment. It is not an AI detector and does not identify private people.");
+        sb.AppendLine("This workspace supports media provenance, artifact review, source chronology, and conservative claim assessment. It is not an AI detector, does not establish attribution from a single heuristic, and does not identify private people.");
         sb.AppendLine();
         sb.AppendLine("## Evidence inventory");
         foreach (var item in dossier.EvidenceItems.OrderBy(x => x.CreatedAt))

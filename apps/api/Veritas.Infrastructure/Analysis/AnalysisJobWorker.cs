@@ -24,10 +24,10 @@ public sealed class AnalysisJobWorker(
                 using var scope = scopeFactory.CreateScope();
                 var db = scope.ServiceProvider.GetRequiredService<VeritasDbContext>();
                 var processor = scope.ServiceProvider.GetRequiredService<AnalysisRunProcessor>();
-                var run = await db.AnalysisRuns
+                var pendingRuns = await db.AnalysisRuns
                     .Where(x => x.Status == AnalysisStatus.Pending)
-                    .OrderBy(x => x.StartedAt)
-                    .FirstOrDefaultAsync(stoppingToken);
+                    .ToListAsync(stoppingToken);
+                var run = pendingRuns.OrderBy(x => x.StartedAt).FirstOrDefault();
 
                 if (run is not null)
                 {
