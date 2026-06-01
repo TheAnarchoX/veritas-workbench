@@ -17,3 +17,4 @@ C:\Users\jimdv\Documents\veritas-workbench\apps\api\Veritas.Infrastructure\obj\D
 C:\Users\jimdv\Documents\veritas-workbench\apps\api\Veritas.Infrastructure\obj\Debug\net9.0\Veritas.Infrastructure.pdb
 C:\Users\jimdv\Documents\veritas-workbench\apps\api\Veritas.Infrastructure\obj\Debug\net9.0\Veritas.Infrastructure.genruntimeconfig.cache
 C:\Users\jimdv\Documents\veritas-workbench\apps\api\Veritas.Infrastructure\obj\Debug\net9.0\ref\Veritas.Infrastructure.dll
+C:\Users\jimdv\Documents\veritas-workbench\apps\api\Veritas.Infrastructure\obj\Debug\net9.0\Veritas.Infrastructure.sourcelink.json

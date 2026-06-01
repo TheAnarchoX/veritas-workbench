@@ -13,3 +13,4 @@ C:\Users\jimdv\Documents\veritas-workbench\apps\api\Veritas.Application\obj\Debu
 C:\Users\jimdv\Documents\veritas-workbench\apps\api\Veritas.Application\obj\Debug\net9.0\refint\Veritas.Application.dll
 C:\Users\jimdv\Documents\veritas-workbench\apps\api\Veritas.Application\obj\Debug\net9.0\Veritas.Application.pdb
 C:\Users\jimdv\Documents\veritas-workbench\apps\api\Veritas.Application\obj\Debug\net9.0\ref\Veritas.Application.dll
+C:\Users\jimdv\Documents\veritas-workbench\apps\api\Veritas.Application\obj\Debug\net9.0\Veritas.Application.sourcelink.json

@@ -484,3 +484,4 @@ C:\Users\jimdv\Documents\veritas-workbench\apps\api\Veritas.Tests\obj\Debug\net9
 C:\Users\jimdv\Documents\veritas-workbench\apps\api\Veritas.Tests\obj\Debug\net9.0\Veritas.Tests.pdb
 C:\Users\jimdv\Documents\veritas-workbench\apps\api\Veritas.Tests\obj\Debug\net9.0\Veritas.Tests.genruntimeconfig.cache
 C:\Users\jimdv\Documents\veritas-workbench\apps\api\Veritas.Tests\obj\Debug\net9.0\ref\Veritas.Tests.dll
+C:\Users\jimdv\Documents\veritas-workbench\apps\api\Veritas.Tests\obj\Debug\net9.0\Veritas.Tests.sourcelink.json

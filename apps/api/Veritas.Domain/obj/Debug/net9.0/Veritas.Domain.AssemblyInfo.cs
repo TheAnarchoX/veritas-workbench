@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("Veritas.Domain")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+21de5dd67d5d1b882c0edc4e8f73ff1d0b34d7ae")]
 [assembly: System.Reflection.AssemblyProductAttribute("Veritas.Domain")]
 [assembly: System.Reflection.AssemblyTitleAttribute("Veritas.Domain")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

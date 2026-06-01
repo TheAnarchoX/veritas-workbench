@@ -1,0 +1,20 @@
+FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
+WORKDIR /src
+COPY . .
+RUN dotnet restore Veritas.Workbench.slnx
+RUN dotnet publish apps/api/Veritas.Api/Veritas.Api.csproj -c Release -o /app/publish
+
+FROM mcr.microsoft.com/dotnet/sdk:9.0
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends python3 python3-pip ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /workspace
+COPY --from=build /app/publish /app
+COPY workers/forensics /workspace/workers/forensics
+RUN python3 -m pip install --break-system-packages -e /workspace/workers/forensics
+ENV ASPNETCORE_URLS=http://+:8080
+ENV Storage__RootPath=/workspace/data/storage
+ENV Forensics__PythonExecutable=python3
+ENV Forensics__WorkerDirectory=/workspace/workers/forensics
+EXPOSE 8080
+ENTRYPOINT ["dotnet", "/app/Veritas.Api.dll"]
