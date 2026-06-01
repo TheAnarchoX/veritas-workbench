@@ -164,7 +164,7 @@ public sealed class ApiIntegrationTests
 
     private sealed class TestApiFactory(bool robotsAllowed = true) : WebApplicationFactory<Program>
     {
-        private readonly SqliteConnection _connection = new("DataSource=:memory:");
+        private readonly string _dbPath = Path.Combine(Path.GetTempPath(), "veritas-tests", $"{Guid.NewGuid():N}.db");
         private readonly string _storageRoot = Path.Combine(Path.GetTempPath(), "veritas-tests", Guid.NewGuid().ToString("N"));
 
         protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -174,28 +174,25 @@ public sealed class ApiIntegrationTests
                 config.AddInMemoryCollection(new Dictionary<string, string?>
                 {
                     ["Analysis:RunBackgroundWorker"] = "false",
+                    ["Database:Provider"] = "Sqlite",
                     ["Database:ApplyMigrations"] = "false",
                     ["Demo:SeedData"] = "false",
-                    ["Storage:RootPath"] = _storageRoot
+                    ["Storage:RootPath"] = _storageRoot,
+                    ["ConnectionStrings:Sqlite"] = $"Data Source={_dbPath}"
                 });
             });
 
             builder.ConfigureServices(services =>
             {
-                services.RemoveAll<DbContextOptions<VeritasDbContext>>();
                 services.RemoveAll<IRobotsPolicyService>();
-                services.AddDbContext<VeritasDbContext>(options => options.UseSqlite(_connection));
                 services.AddSingleton<IRobotsPolicyService>(new FakeRobotsPolicyService(robotsAllowed));
             });
         }
 
         public async Task<HttpClient> CreateReadyClientAsync()
         {
-            if (_connection.State != System.Data.ConnectionState.Open)
-            {
-                await _connection.OpenAsync();
-            }
-
+            Directory.CreateDirectory(Path.GetDirectoryName(_dbPath)!);
+            Directory.CreateDirectory(_storageRoot);
             var client = CreateClient();
             using var scope = Services.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<VeritasDbContext>();
@@ -205,13 +202,21 @@ public sealed class ApiIntegrationTests
 
         protected override void Dispose(bool disposing)
         {
-            _connection.Dispose();
+            base.Dispose(disposing);
+            SqliteConnection.ClearAllPools();
+
             if (Directory.Exists(_storageRoot))
             {
                 Directory.Delete(_storageRoot, recursive: true);
             }
 
-            base.Dispose(disposing);
+            foreach (var path in new[] { _dbPath, $"{_dbPath}-wal", $"{_dbPath}-shm" })
+            {
+                if (File.Exists(path))
+                {
+                    File.Delete(path);
+                }
+            }
         }
     }
 

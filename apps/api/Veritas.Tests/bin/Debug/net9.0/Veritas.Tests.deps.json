@@ -1509,6 +1509,7 @@
         "dependencies": {
           "Microsoft.EntityFrameworkCore": "9.0.16",
           "Microsoft.EntityFrameworkCore.Relational": "9.0.16",
+          "Microsoft.EntityFrameworkCore.Sqlite": "9.0.16",
           "Microsoft.Extensions.Configuration.Abstractions": "9.0.16",
           "Microsoft.Extensions.Hosting.Abstractions": "9.0.16",
           "Microsoft.Extensions.Http": "9.0.16",

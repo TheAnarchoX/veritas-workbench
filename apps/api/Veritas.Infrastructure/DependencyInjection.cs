@@ -22,10 +22,19 @@ public static class DependencyInjection
         services.Configure<AnalysisOptions>(configuration.GetSection("Analysis"));
         services.Configure<ForensicsOptions>(configuration.GetSection("Forensics"));
 
-        var connectionString = configuration.GetConnectionString("Postgres")
-            ?? "Host=localhost;Port=5432;Database=veritas;Username=veritas;Password=veritas";
+        services.AddDbContext<VeritasDbContext>(options =>
+        {
+            var provider = configuration["Database:Provider"] ?? "Postgres";
+            if (provider.Equals("Sqlite", StringComparison.OrdinalIgnoreCase))
+            {
+                options.UseSqlite(configuration.GetConnectionString("Sqlite") ?? "Data Source=veritas.db");
+                return;
+            }
 
-        services.AddDbContext<VeritasDbContext>(options => options.UseNpgsql(connectionString));
+            var connectionString = configuration.GetConnectionString("Postgres")
+                ?? "Host=localhost;Port=5432;Database=veritas;Username=veritas;Password=veritas";
+            options.UseNpgsql(connectionString);
+        });
 
         services.AddSingleton<LocalEvidenceStorage>();
         services.AddSingleton<IEvidenceStorage>(sp => sp.GetRequiredService<LocalEvidenceStorage>());
