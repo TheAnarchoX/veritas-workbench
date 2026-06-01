@@ -128,6 +128,41 @@ export type TimelineEntry = {
   confidence: string
 }
 
+export type DossierEntity = {
+  id: string
+  dossierId: string
+  kind: string
+  name: string
+  handle?: string
+  platform?: string
+  url?: string
+  notes?: string
+  confidence: string
+  createdAt: string
+  updatedAt: string
+}
+
+export type DossierEntityRelation = {
+  id: string
+  dossierId: string
+  fromEntityId: string
+  toEntityId: string
+  relationType: string
+  confidence: string
+  evidenceBasis?: string
+  notes?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export type TextTriageResult = {
+  evidence: EvidenceItem
+  finding: Finding
+  tasks: InvestigationTask[]
+  timelineEntry: TimelineEntry
+  signals: string[]
+}
+
 export type DossierBundle = {
   dossier: Dossier
   sources: Source[]
@@ -136,4 +171,6 @@ export type DossierBundle = {
   claims: Claim[]
   tasks: InvestigationTask[]
   timeline: TimelineEntry[]
+  entities: DossierEntity[]
+  entityRelations: DossierEntityRelation[]
 }

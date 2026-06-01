@@ -17,6 +17,8 @@ public sealed class MarkdownReportService(VeritasDbContext db) : IReportService
             .Include(x => x.Findings)
             .Include(x => x.Tasks)
             .Include(x => x.TimelineEntries)
+            .Include(x => x.Entities)
+            .Include(x => x.EntityRelations)
             .FirstOrDefaultAsync(x => x.Id == dossierId, ct);
 
         if (dossier is null)
@@ -46,6 +48,33 @@ public sealed class MarkdownReportService(VeritasDbContext db) : IReportService
             if (!string.IsNullOrWhiteSpace(claim.Rationale))
             {
                 sb.AppendLine($"  - Rationale: {claim.Rationale}");
+            }
+        }
+        sb.AppendLine();
+        sb.AppendLine("## Related entities");
+        foreach (var entity in dossier.Entities.OrderBy(x => x.Kind).ThenBy(x => x.Name))
+        {
+            sb.AppendLine($"- **{entity.Kind} / {entity.Confidence}**: {entity.Name} {entity.Handle ?? ""} {entity.Platform ?? ""} {entity.Url ?? ""}".Trim());
+            if (!string.IsNullOrWhiteSpace(entity.Notes))
+            {
+                sb.AppendLine($"  - Notes: {entity.Notes}");
+            }
+        }
+        sb.AppendLine();
+        sb.AppendLine("## Entity relationships");
+        var entityNames = dossier.Entities.ToDictionary(x => x.Id, x => x.Name);
+        foreach (var relation in dossier.EntityRelations.OrderBy(x => x.RelationType).ThenBy(x => x.CreatedAt))
+        {
+            var from = entityNames.GetValueOrDefault(relation.FromEntityId, relation.FromEntityId.ToString());
+            var to = entityNames.GetValueOrDefault(relation.ToEntityId, relation.ToEntityId.ToString());
+            sb.AppendLine($"- **{relation.RelationType} / {relation.Confidence}**: {from} -> {to}");
+            if (!string.IsNullOrWhiteSpace(relation.EvidenceBasis))
+            {
+                sb.AppendLine($"  - Evidence basis: {relation.EvidenceBasis}");
+            }
+            if (!string.IsNullOrWhiteSpace(relation.Notes))
+            {
+                sb.AppendLine($"  - Notes: {relation.Notes}");
             }
         }
         sb.AppendLine();

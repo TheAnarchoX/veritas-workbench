@@ -40,6 +40,14 @@ export async function patchJson<T>(path: string, body: unknown): Promise<T> {
   return response.json() as Promise<T>
 }
 
+export async function deleteJson(path: string): Promise<void> {
+  const response = await fetch(apiUrl(path), { method: 'DELETE' })
+  if (!response.ok) {
+    const text = await response.text()
+    throw new Error(text || `${response.status} ${response.statusText}`)
+  }
+}
+
 export async function postForm<T>(path: string, form: FormData): Promise<T> {
   const response = await fetch(apiUrl(path), {
     method: 'POST',

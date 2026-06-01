@@ -126,6 +126,18 @@ public enum InvestigationTaskType
     ManualVerification,
     SourceChronology,
     AccountTimeline,
+    TextAuthenticityReview,
+    Other
+}
+
+public enum DossierEntityKind
+{
+    SocialAccount,
+    Person,
+    Organization,
+    Website,
+    Location,
+    Alias,
     Other
 }
 

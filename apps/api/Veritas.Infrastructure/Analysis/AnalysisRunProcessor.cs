@@ -45,7 +45,17 @@ public sealed class AnalysisRunProcessor(
                     return;
                 }
 
-                if (run.StartedAt is not null && DateTimeOffset.UtcNow - run.StartedAt >= timeout)
+                if (run.StartedAt is null)
+                {
+                    run.Status = AnalysisStatus.Failed;
+                    run.CompletedAt = DateTimeOffset.UtcNow;
+                    run.Error = "Analysis run was marked running without a start time.";
+                    run.Summary = "Analysis state was inconsistent and has been closed.";
+                    await db.SaveChangesAsync(ct);
+                    return;
+                }
+
+                if (DateTimeOffset.UtcNow - run.StartedAt >= timeout)
                 {
                     run.Status = AnalysisStatus.Failed;
                     run.CompletedAt = DateTimeOffset.UtcNow;
@@ -160,6 +170,16 @@ public sealed class AnalysisRunProcessor(
             EventType = CustodyEventType.Analyzed,
             Actor = "system",
             DetailsJson = JsonSerializer.Serialize(new { run.Id, run.Pipeline })
+        });
+        db.TimelineEntries.Add(new TimelineEntry
+        {
+            DossierId = run.EvidenceItem.DossierId,
+            Time = DateTimeOffset.UtcNow,
+            Source = run.EvidenceItem.Title,
+            EvidenceHash = run.EvidenceItem.ContentHashSha256,
+            Caption = $"Analysis completed: {run.Pipeline} on {run.EvidenceItem.Title}",
+            Notes = run.Summary,
+            Confidence = ConfidenceLevel.Medium
         });
 
         await db.SaveChangesAsync(ct);

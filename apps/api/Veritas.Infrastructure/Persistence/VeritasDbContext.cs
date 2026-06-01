@@ -17,6 +17,8 @@ public sealed class VeritasDbContext(DbContextOptions<VeritasDbContext> options)
     public DbSet<InvestigationTask> InvestigationTasks => Set<InvestigationTask>();
     public DbSet<ChainOfCustodyEvent> ChainOfCustodyEvents => Set<ChainOfCustodyEvent>();
     public DbSet<TimelineEntry> TimelineEntries => Set<TimelineEntry>();
+    public DbSet<DossierEntity> DossierEntities => Set<DossierEntity>();
+    public DbSet<DossierEntityRelation> DossierEntityRelations => Set<DossierEntityRelation>();
     public DbSet<RobotsCacheEntry> RobotsCacheEntries => Set<RobotsCacheEntry>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -134,6 +136,32 @@ public sealed class VeritasDbContext(DbContextOptions<VeritasDbContext> options)
             entity.HasIndex(x => new { x.DossierId, x.Time });
         });
 
+        modelBuilder.Entity<DossierEntity>(entity =>
+        {
+            entity.ToTable("dossier_entities");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Kind).HasConversion<string>().HasMaxLength(60);
+            entity.Property(x => x.Name).HasMaxLength(220);
+            entity.Property(x => x.Handle).HasMaxLength(180);
+            entity.Property(x => x.Platform).HasMaxLength(80);
+            entity.Property(x => x.Url).HasMaxLength(2048);
+            entity.Property(x => x.Confidence).HasConversion<string>().HasMaxLength(40);
+            entity.HasIndex(x => x.DossierId);
+        });
+
+        modelBuilder.Entity<DossierEntityRelation>(entity =>
+        {
+            entity.ToTable("dossier_entity_relations");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.RelationType).HasMaxLength(120);
+            entity.Property(x => x.Confidence).HasConversion<string>().HasMaxLength(40);
+            entity.HasIndex(x => x.DossierId);
+            entity.HasIndex(x => new { x.FromEntityId, x.ToEntityId, x.RelationType }).IsUnique();
+            entity.HasOne(x => x.Dossier).WithMany(x => x.EntityRelations).HasForeignKey(x => x.DossierId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(x => x.FromEntity).WithMany(x => x.OutgoingRelations).HasForeignKey(x => x.FromEntityId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(x => x.ToEntity).WithMany(x => x.IncomingRelations).HasForeignKey(x => x.ToEntityId).OnDelete(DeleteBehavior.Cascade);
+        });
+
         modelBuilder.Entity<RobotsCacheEntry>(entity =>
         {
             entity.ToTable("robots_cache_entries");
@@ -178,6 +206,34 @@ public sealed class VeritasDbContext(DbContextOptions<VeritasDbContext> options)
         }
 
         foreach (var entry in ChangeTracker.Entries<Claim>())
+        {
+            if (entry.State == EntityState.Added)
+            {
+                entry.Entity.CreatedAt = now;
+                entry.Entity.UpdatedAt = now;
+            }
+
+            if (entry.State == EntityState.Modified)
+            {
+                entry.Entity.UpdatedAt = now;
+            }
+        }
+
+        foreach (var entry in ChangeTracker.Entries<DossierEntity>())
+        {
+            if (entry.State == EntityState.Added)
+            {
+                entry.Entity.CreatedAt = now;
+                entry.Entity.UpdatedAt = now;
+            }
+
+            if (entry.State == EntityState.Modified)
+            {
+                entry.Entity.UpdatedAt = now;
+            }
+        }
+
+        foreach (var entry in ChangeTracker.Entries<DossierEntityRelation>())
         {
             if (entry.State == EntityState.Added)
             {

@@ -72,12 +72,33 @@ public sealed record TimelineEntryDto(Guid Id, Guid DossierId, DateTimeOffset Ti
     public static TimelineEntryDto From(TimelineEntry entry) => new(entry.Id, entry.DossierId, entry.Time, entry.Platform, entry.Url, entry.Source, entry.EvidenceHash, entry.Caption, entry.FirstKnownAppearance, entry.Notes, entry.Confidence.ToString());
 }
 
+public sealed record DossierEntityDto(Guid Id, Guid DossierId, string Kind, string Name, string? Handle, string? Platform, string? Url, string? Notes, string Confidence, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt)
+{
+    public static DossierEntityDto From(DossierEntity entity) => new(entity.Id, entity.DossierId, entity.Kind.ToString(), entity.Name, entity.Handle, entity.Platform, entity.Url, entity.Notes, entity.Confidence.ToString(), entity.CreatedAt, entity.UpdatedAt);
+}
+
+public sealed record DossierEntityRelationDto(Guid Id, Guid DossierId, Guid FromEntityId, Guid ToEntityId, string RelationType, string Confidence, string? EvidenceBasis, string? Notes, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt)
+{
+    public static DossierEntityRelationDto From(DossierEntityRelation relation) => new(relation.Id, relation.DossierId, relation.FromEntityId, relation.ToEntityId, relation.RelationType, relation.Confidence.ToString(), relation.EvidenceBasis, relation.Notes, relation.CreatedAt, relation.UpdatedAt);
+}
+
+public sealed record TextTriageResultDto(EvidenceDto Evidence, FindingDto Finding, IReadOnlyList<InvestigationTaskDto> Tasks, TimelineEntryDto TimelineEntry, IReadOnlyList<string> Signals);
+
 public sealed record CreateProjectRequest(string Name, string? Description);
 public sealed record CreateDossierRequest(string Title, string? Summary);
 public sealed record AddUrlSourceRequest(string Url, string? Title, string? AuthorHandle, DateTimeOffset? ObservedAt);
+public sealed record PatchSourceRequest(string? Title, string? AuthorHandle, string? Platform, string? Notes, string? CollectionStatus, DateTimeOffset? ObservedAt, DateTimeOffset? FirstSeenAt);
 public sealed record CreateFindingRequest(Guid? EvidenceItemId, Guid? AnalysisRunId, string Category, string Claim, string Confidence, string Direction, string Evidence, string Limitations, string FalsificationPath);
+public sealed record PatchFindingRequest(Guid? EvidenceItemId, Guid? AnalysisRunId, string? Category, string? Claim, string? Confidence, string? Direction, string? Evidence, string? Limitations, string? FalsificationPath);
 public sealed record CreateClaimRequest(string Text, string? Status, string? Confidence, string? Rationale);
-public sealed record PatchClaimRequest(string? Status, string? Confidence, string? Rationale);
+public sealed record PatchClaimRequest(string? Text, string? Status, string? Confidence, string? Rationale);
 public sealed record CreateTaskRequest(string Title, string? Description, string? Priority, string? TaskType);
-public sealed record PatchTaskRequest(string? Status, string? Priority, string? Description);
+public sealed record PatchTaskRequest(string? Title, string? Status, string? Priority, string? TaskType, string? Description);
 public sealed record CreateTimelineEntryRequest(DateTimeOffset? Time, string? Platform, string? Url, string? Source, string? EvidenceHash, string? Caption, bool? FirstKnownAppearance, string? Notes, string? Confidence);
+public sealed record PatchTimelineEntryRequest(DateTimeOffset? Time, string? Platform, string? Url, string? Source, string? EvidenceHash, string? Caption, bool? FirstKnownAppearance, string? Notes, string? Confidence);
+public sealed record PatchEvidenceRequest(Guid? SourceId, bool? ClearSource, string? Title, string? Description, string? Type, string? ProvenanceStatus, DateTimeOffset? CapturedAt);
+public sealed record CreateDossierEntityRequest(string Kind, string Name, string? Handle, string? Platform, string? Url, string? Notes, string? Confidence);
+public sealed record PatchDossierEntityRequest(string? Kind, string? Name, string? Handle, string? Platform, string? Url, string? Notes, string? Confidence);
+public sealed record CreateDossierEntityRelationRequest(Guid FromEntityId, Guid ToEntityId, string RelationType, string? Confidence, string? EvidenceBasis, string? Notes);
+public sealed record PatchDossierEntityRelationRequest(Guid? FromEntityId, Guid? ToEntityId, string? RelationType, string? Confidence, string? EvidenceBasis, string? Notes);
+public sealed record TextTriageRequest(string Title, string Text, Guid? SourceId, string? Platform, string? Url, DateTimeOffset? ObservedAt);

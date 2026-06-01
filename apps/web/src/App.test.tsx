@@ -63,6 +63,8 @@ const bundle: DossierBundle = {
   claims: [],
   tasks: [],
   timeline: [],
+  entities: [],
+  entityRelations: [],
 }
 
 function withRouter(ui: ReactElement) {

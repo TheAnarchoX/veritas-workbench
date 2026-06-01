@@ -18,4 +18,6 @@ public sealed class Dossier
     public List<Claim> Claims { get; set; } = [];
     public List<InvestigationTask> Tasks { get; set; } = [];
     public List<TimelineEntry> TimelineEntries { get; set; } = [];
+    public List<DossierEntity> Entities { get; set; } = [];
+    public List<DossierEntityRelation> EntityRelations { get; set; } = [];
 }

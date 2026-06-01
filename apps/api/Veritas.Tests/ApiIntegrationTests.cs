@@ -13,6 +13,7 @@ using Microsoft.Extensions.Hosting;
 using Veritas.Application.Policies;
 using Veritas.Domain;
 using Veritas.Domain.Entities;
+using Veritas.Infrastructure.Analysis;
 using Veritas.Infrastructure.Persistence;
 
 namespace Veritas.Tests;
@@ -122,6 +123,126 @@ public sealed class ApiIntegrationTests
 
         var runs = await client.GetFromJsonAsync<List<AnalysisRunDto>>($"/api/evidence/{evidence.Id}/analysis-runs", JsonOptions);
         Assert.Contains(runs!, x => x.Id == run.Id && x.Status == "Completed");
+    }
+
+    [Fact]
+    public async Task Running_analysis_without_start_time_is_closed_as_failed()
+    {
+        using var factory = new TestApiFactory();
+        var client = await factory.CreateReadyClientAsync();
+        var dossier = await CreateDossierAsync(client);
+        var evidence = await UploadTinyEvidenceAsync(client, dossier.Id);
+
+        var response = await client.PostAsync($"/api/evidence/{evidence.Id}/analysis/image", null);
+        Assert.Equal(HttpStatusCode.Accepted, response.StatusCode);
+        var run = await ReadAsync<AnalysisRunDto>(response);
+
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<VeritasDbContext>();
+        var entity = await db.AnalysisRuns.FirstAsync(x => x.Id == run.Id);
+        entity.Status = AnalysisStatus.Running;
+        entity.StartedAt = null;
+        await db.SaveChangesAsync();
+
+        var processor = scope.ServiceProvider.GetRequiredService<AnalysisRunProcessor>();
+        await processor.ProcessAsync(run.Id, CancellationToken.None);
+
+        db.ChangeTracker.Clear();
+        var updated = await db.AnalysisRuns.FirstAsync(x => x.Id == run.Id);
+        Assert.Equal(AnalysisStatus.Failed, updated.Status);
+        Assert.NotNull(updated.CompletedAt);
+        Assert.Contains("without a start time", updated.Error);
+    }
+
+    [Fact]
+    public async Task Manual_workflow_changes_create_timeline_entries()
+    {
+        using var factory = new TestApiFactory();
+        var client = await factory.CreateReadyClientAsync();
+        var dossier = await CreateDossierAsync(client);
+
+        var findingResponse = await client.PostAsJsonAsync($"/api/dossiers/{dossier.Id}/findings", new
+        {
+            category = "ManualObservation",
+            claim = "A manual source comparison is needed.",
+            confidence = "Low",
+            direction = "Inconclusive",
+            evidence = "Initial analyst note.",
+            limitations = "Needs corroboration.",
+            falsificationPath = "Find earlier source copies."
+        });
+        var finding = await ReadAsync<FindingDto>(findingResponse);
+        await client.PatchAsJsonAsync($"/api/findings/{finding.Id}", new { confidence = "Medium", direction = "Neutral" });
+
+        var claimResponse = await client.PostAsJsonAsync($"/api/dossiers/{dossier.Id}/claims", new { text = "The image was reposted.", status = "Unassessed", confidence = "Low" });
+        var claim = await ReadAsync<ClaimDto>(claimResponse);
+        await client.PatchAsJsonAsync($"/api/claims/{claim.Id}", new { status = "Plausible", confidence = "Medium" });
+
+        var taskResponse = await client.PostAsJsonAsync($"/api/dossiers/{dossier.Id}/tasks", new { title = "Check archived copies", priority = "High", taskType = "SourceChronology" });
+        var task = await ReadAsync<InvestigationTaskDto>(taskResponse);
+        await client.PatchAsJsonAsync($"/api/tasks/{task.Id}", new { status = "Done" });
+
+        var timeline = await client.GetFromJsonAsync<List<TimelineEntryDto>>($"/api/dossiers/{dossier.Id}/timeline", JsonOptions);
+        Assert.NotNull(timeline);
+        Assert.Contains(timeline!, x => x.Caption.Contains("Finding recorded", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(timeline!, x => x.Caption.Contains("Finding updated", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(timeline!, x => x.Caption.Contains("Claim opened", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(timeline!, x => x.Caption.Contains("Claim updated", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(timeline!, x => x.Caption.Contains("Task opened", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(timeline!, x => x.Caption.Contains("Task Done", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task Entity_relations_can_be_created_updated_listed_and_deleted()
+    {
+        using var factory = new TestApiFactory();
+        var client = await factory.CreateReadyClientAsync();
+        var dossier = await CreateDossierAsync(client);
+
+        var firstResponse = await client.PostAsJsonAsync($"/api/dossiers/{dossier.Id}/entities", new { kind = "SocialAccount", name = "Account A", handle = "@a", confidence = "Medium" });
+        var secondResponse = await client.PostAsJsonAsync($"/api/dossiers/{dossier.Id}/entities", new { kind = "Organization", name = "Org B", confidence = "Low" });
+        var first = await ReadAsync<DossierEntityDto>(firstResponse);
+        var second = await ReadAsync<DossierEntityDto>(secondResponse);
+
+        var selfLink = await client.PostAsJsonAsync($"/api/dossiers/{dossier.Id}/entity-relations", new
+        {
+            fromEntityId = first.Id,
+            toEntityId = first.Id,
+            relationType = "alias of"
+        });
+        Assert.Equal(HttpStatusCode.BadRequest, selfLink.StatusCode);
+
+        var relationResponse = await client.PostAsJsonAsync($"/api/dossiers/{dossier.Id}/entity-relations", new
+        {
+            fromEntityId = first.Id,
+            toEntityId = second.Id,
+            relationType = "operates",
+            confidence = "Low",
+            evidenceBasis = "Profile bio links to the organization."
+        });
+        var relation = await ReadAsync<DossierEntityRelationDto>(relationResponse);
+        Assert.Equal("operates", relation.RelationType);
+
+        var patchedResponse = await client.PatchAsJsonAsync($"/api/entity-relations/{relation.Id}", new
+        {
+            relationType = "member of",
+            confidence = "Medium",
+            notes = "Patched relation note."
+        });
+        var patched = await ReadAsync<DossierEntityRelationDto>(patchedResponse);
+        Assert.Equal("member of", patched.RelationType);
+        Assert.Equal("Medium", patched.Confidence);
+
+        var listed = await client.GetFromJsonAsync<List<DossierEntityRelationDto>>($"/api/dossiers/{dossier.Id}/entity-relations", JsonOptions);
+        Assert.Contains(listed!, x => x.Id == relation.Id);
+
+        var bundle = await client.GetFromJsonAsync<DossierBundleDto>($"/api/dossiers/{dossier.Id}", JsonOptions);
+        Assert.Contains(bundle!.EntityRelations, x => x.Id == relation.Id);
+
+        var delete = await client.DeleteAsync($"/api/entity-relations/{relation.Id}");
+        Assert.Equal(HttpStatusCode.NoContent, delete.StatusCode);
+        listed = await client.GetFromJsonAsync<List<DossierEntityRelationDto>>($"/api/dossiers/{dossier.Id}/entity-relations", JsonOptions);
+        Assert.DoesNotContain(listed!, x => x.Id == relation.Id);
     }
 
     [Fact]
@@ -244,5 +365,11 @@ public sealed class ApiIntegrationTests
     private sealed record SourceDto(Guid Id, Guid DossierId, string Type, string? Url, string? Platform, string? Title, string? AuthorHandle, DateTimeOffset? ObservedAt, DateTimeOffset? FirstSeenAt, string CollectionStatus, string? RobotsDecision, string? Notes);
     private sealed record EvidenceDto(Guid Id, Guid DossierId, Guid? SourceId, string Type, string Title, string? Description, string? OriginalFilename, string? ContentHashSha256, string? PerceptualHash, string? MimeType, long? FileSizeBytes, int? Width, int? Height, double? DurationSeconds, DateTimeOffset? CapturedAt, DateTimeOffset UploadedAt, string ProvenanceStatus, string FileUrl, List<AnalysisRunDto> AnalysisRuns);
     private sealed record AnalysisRunDto(Guid Id, Guid EvidenceItemId, string Pipeline, string Status, DateTimeOffset? StartedAt, DateTimeOffset? CompletedAt, string? ToolVersion, string? Summary, string? Error, List<object> Artifacts);
+    private sealed record FindingDto(Guid Id, Guid DossierId, Guid? EvidenceItemId, Guid? AnalysisRunId, string Category, string Claim, string Confidence, string Direction, string Evidence, string Limitations, string FalsificationPath, DateTimeOffset CreatedAt);
+    private sealed record ClaimDto(Guid Id, Guid DossierId, string Text, string Status, string Confidence, string? Rationale, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
     private sealed record InvestigationTaskDto(Guid Id, Guid DossierId, string Title, string? Description, string Status, string Priority, string TaskType, DateTimeOffset CreatedAt, DateTimeOffset? CompletedAt);
+    private sealed record TimelineEntryDto(Guid Id, Guid DossierId, DateTimeOffset Time, string? Platform, string? Url, string? Source, string? EvidenceHash, string? Caption, bool FirstKnownAppearance, string? Notes, string Confidence);
+    private sealed record DossierEntityDto(Guid Id, Guid DossierId, string Kind, string Name, string? Handle, string? Platform, string? Url, string? Notes, string Confidence, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
+    private sealed record DossierEntityRelationDto(Guid Id, Guid DossierId, Guid FromEntityId, Guid ToEntityId, string RelationType, string Confidence, string? EvidenceBasis, string? Notes, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
+    private sealed record DossierBundleDto(DossierDto Dossier, List<SourceDto> Sources, List<EvidenceDto> Evidence, List<FindingDto> Findings, List<ClaimDto> Claims, List<InvestigationTaskDto> Tasks, List<TimelineEntryDto> Timeline, List<DossierEntityDto> Entities, List<DossierEntityRelationDto> EntityRelations);
 }

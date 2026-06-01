@@ -2,7 +2,7 @@
 
 Veritas Workbench is an open-source, local-first OSINT and media-forensics workspace for truth-seeking investigations into suspected AI-generated, AI-altered, stolen, reposted, or coordinated online media.
 
-It is not an AI detector. It helps organize evidence, provenance, source chronology, cautious forensic triage, claims, tasks, chain-of-custody events, and Markdown reports.
+It is not an AI detector. It helps organize evidence, related entities, entity relationships, provenance, source chronology, cautious forensic and text triage, claims, tasks, chain-of-custody events, artifacts, and Markdown reports.
 
 ## Ethical Boundaries
 
@@ -98,11 +98,16 @@ make docker-down
 3. Open the project and create a dossier.
 4. Open the dossier and use the Sources tab to add a URL.
 5. For X/Twitter URLs, the app checks collection policy and requests manual original media or a `pbs.twimg.com` `name=orig` URL when automatic collection is not clearly allowed.
-6. Use the Evidence tab to upload original media, screenshots, videos, archive captures, or metadata text.
-7. Open an evidence item and run image or video analysis.
-8. Review metadata, ELA outputs, JPEG/compression summary, residual/FFT artifacts, frames, corner crops, string scans, findings, tasks, and limitations.
-9. Add claims and tasks.
-10. Open the Report tab or `/dossiers/:id/report` to export Markdown.
+6. Use the Entities tab to track social accounts, people, organizations, sites, aliases, and other related subjects without forcing them into evidence or source records. Link entities with relationship types such as alias, operator, owner, member, amplifier, or reference, then inspect the visual entity graph.
+7. Use the Evidence tab to upload original media, screenshots, videos, archive captures, or metadata text. Evidence can be linked back to a source.
+8. Use Text Lab to store text samples and run cautious AI-style triage. The workflow creates linked text evidence, findings, tasks, and timeline entries.
+9. Open an evidence item and run image or video analysis.
+10. Review artifacts inside the web app, download individual artifacts, or use Download All for the analysis-run zip bundle.
+11. Add or edit manual findings, link them to evidence and analysis runs, and promote a finding into an assessable claim when it is ready for resolution.
+12. Resolve claims, tasks, sources, entities, evidence records, findings, and timeline entries as the investigation evolves. Each major record type can be edited and removed when it is no longer relevant.
+13. Open the Report tab or `/dossiers/:id/report` to export Markdown.
+
+Source intake, evidence upload, text triage, manual findings, claims, task status changes, entities, entity relations, and analysis runs create timeline/finding/task context automatically so the dossier reads as a workflow instead of isolated tabs.
 
 ## Tests
 
