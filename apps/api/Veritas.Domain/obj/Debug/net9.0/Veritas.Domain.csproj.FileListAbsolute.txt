@@ -1,0 +1,11 @@
+C:\Users\jimdv\Documents\veritas-workbench\apps\api\Veritas.Domain\bin\Debug\net9.0\Veritas.Domain.deps.json
+C:\Users\jimdv\Documents\veritas-workbench\apps\api\Veritas.Domain\bin\Debug\net9.0\Veritas.Domain.dll
+C:\Users\jimdv\Documents\veritas-workbench\apps\api\Veritas.Domain\bin\Debug\net9.0\Veritas.Domain.pdb
+C:\Users\jimdv\Documents\veritas-workbench\apps\api\Veritas.Domain\obj\Debug\net9.0\Veritas.Domain.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\jimdv\Documents\veritas-workbench\apps\api\Veritas.Domain\obj\Debug\net9.0\Veritas.Domain.AssemblyInfoInputs.cache
+C:\Users\jimdv\Documents\veritas-workbench\apps\api\Veritas.Domain\obj\Debug\net9.0\Veritas.Domain.AssemblyInfo.cs
+C:\Users\jimdv\Documents\veritas-workbench\apps\api\Veritas.Domain\obj\Debug\net9.0\Veritas.Domain.csproj.CoreCompileInputs.cache
+C:\Users\jimdv\Documents\veritas-workbench\apps\api\Veritas.Domain\obj\Debug\net9.0\Veritas.Domain.dll
+C:\Users\jimdv\Documents\veritas-workbench\apps\api\Veritas.Domain\obj\Debug\net9.0\refint\Veritas.Domain.dll
+C:\Users\jimdv\Documents\veritas-workbench\apps\api\Veritas.Domain\obj\Debug\net9.0\Veritas.Domain.pdb
+C:\Users\jimdv\Documents\veritas-workbench\apps\api\Veritas.Domain\obj\Debug\net9.0\ref\Veritas.Domain.dll
