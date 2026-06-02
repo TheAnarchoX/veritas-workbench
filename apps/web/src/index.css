@@ -139,7 +139,14 @@ a {
 }
 
 .workflow-step {
-  min-height: 76px;
+  background: var(--surface);
+  border-radius: 0;
+}
+
+.workflow-step.active {
+  background: var(--surface-muted);
+  border-color: var(--accent);
+  color: var(--text-strong);
 }
 
 .workspace-content {
@@ -160,23 +167,20 @@ a {
   margin-top: -1px;
 }
 
-.section-strip {
-  background: var(--surface);
-}
-
-.section-tab {
-  background: var(--surface);
-  border-bottom: 2px solid transparent;
-}
-
-.section-tab.active {
-  background: var(--surface-muted);
-  border-bottom-color: var(--accent);
-  color: var(--text-strong);
-}
-
 .flow-node {
   min-height: 112px;
+}
+
+.status-tile {
+  background: var(--surface-subtle);
+}
+
+.status-tile.green {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+}
+
+.status-tile.amber {
+  border-color: var(--warning-border);
 }
 
 .flow-node:hover,
@@ -229,8 +233,7 @@ a {
   border-color: var(--accent);
 }
 
-:root[data-theme="dark"] .workflow-step.bg-emerald-700,
-:root[data-theme="dark"] .section-tab.active {
+:root[data-theme="dark"] .workflow-step.active {
   background-color: #080909;
 }
 

@@ -1,5 +1,7 @@
 # Instructions for Future Coding Agents
 
+- For the local non-Docker dev stack, always use `powershell -ExecutionPolicy Bypass -File .\scripts\dev-up.ps1 -NoBuild` to restart services. Do not start `Veritas.Api` with bare `dotnet run` or `Veritas.Api.exe`; the dev script sets the required SQLite runtime (`Database__Provider=Sqlite`, `ConnectionStrings__Sqlite=data/veritas-dev.db`, `Database__EnsureCreated=true`) and `VITE_API_BASE_URL`.
+- After restarting the API, verify `http://127.0.0.1:8080/api/projects`, not only `/api/health`; health does not prove database connectivity.
 - Preserve the ethical constraints: no doxxing, harassment, stalking, deanonymization, or private-person face recognition.
 - Keep the product provenance-first. Do not reposition it as an AI detector.
 - Use conservative forensic language. Findings need confidence, evidence, limitations, and falsification paths.

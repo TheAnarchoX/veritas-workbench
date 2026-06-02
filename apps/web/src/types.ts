@@ -25,6 +25,7 @@ export type Source = {
   platform?: string
   title?: string
   authorHandle?: string
+  authorEntityId?: string
   observedAt?: string
   firstSeenAt?: string
   collectionStatus: string
@@ -51,6 +52,7 @@ export type AnalysisRun = {
   toolVersion?: string
   summary?: string
   error?: string
+  resultJson?: string
   artifacts: AnalysisArtifact[]
 }
 
@@ -100,6 +102,16 @@ export type Claim = {
   rationale?: string
   createdAt: string
   updatedAt: string
+  evidenceLinks: ClaimEvidenceLink[]
+}
+
+export type ClaimEvidenceLink = {
+  id: string
+  claimId: string
+  evidenceItemId: string
+  stance: string
+  note?: string
+  createdAt: string
 }
 
 export type InvestigationTask = {

@@ -18,4 +18,5 @@ public sealed class DossierEntity
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
     public List<DossierEntityRelation> OutgoingRelations { get; set; } = [];
     public List<DossierEntityRelation> IncomingRelations { get; set; } = [];
+    public List<Source> AuthoredSources { get; set; } = [];
 }

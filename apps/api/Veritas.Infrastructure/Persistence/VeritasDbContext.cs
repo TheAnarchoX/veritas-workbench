@@ -14,6 +14,7 @@ public sealed class VeritasDbContext(DbContextOptions<VeritasDbContext> options)
     public DbSet<AnalysisArtifact> AnalysisArtifacts => Set<AnalysisArtifact>();
     public DbSet<Finding> Findings => Set<Finding>();
     public DbSet<Claim> Claims => Set<Claim>();
+    public DbSet<ClaimEvidenceLink> ClaimEvidenceLinks => Set<ClaimEvidenceLink>();
     public DbSet<InvestigationTask> InvestigationTasks => Set<InvestigationTask>();
     public DbSet<ChainOfCustodyEvent> ChainOfCustodyEvents => Set<ChainOfCustodyEvent>();
     public DbSet<TimelineEntry> TimelineEntries => Set<TimelineEntry>();
@@ -49,7 +50,9 @@ public sealed class VeritasDbContext(DbContextOptions<VeritasDbContext> options)
             entity.Property(x => x.Platform).HasMaxLength(80);
             entity.Property(x => x.Url).HasMaxLength(2048);
             entity.HasMany(x => x.EvidenceItems).WithOne(x => x.Source).HasForeignKey(x => x.SourceId).OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(x => x.AuthorEntity).WithMany(x => x.AuthoredSources).HasForeignKey(x => x.AuthorEntityId).OnDelete(DeleteBehavior.SetNull);
             entity.HasIndex(x => x.DossierId);
+            entity.HasIndex(x => x.AuthorEntityId);
         });
 
         modelBuilder.Entity<EvidenceItem>(entity =>
@@ -106,6 +109,18 @@ public sealed class VeritasDbContext(DbContextOptions<VeritasDbContext> options)
             entity.Property(x => x.Status).HasConversion<string>().HasMaxLength(40);
             entity.Property(x => x.Confidence).HasConversion<string>().HasMaxLength(40);
             entity.HasIndex(x => x.DossierId);
+        });
+
+        modelBuilder.Entity<ClaimEvidenceLink>(entity =>
+        {
+            entity.ToTable("claim_evidence_links");
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Stance).HasConversion<string>().HasMaxLength(40);
+            entity.HasIndex(x => x.ClaimId);
+            entity.HasIndex(x => x.EvidenceItemId);
+            entity.HasIndex(x => new { x.ClaimId, x.EvidenceItemId }).IsUnique();
+            entity.HasOne(x => x.Claim).WithMany(x => x.EvidenceLinks).HasForeignKey(x => x.ClaimId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(x => x.EvidenceItem).WithMany(x => x.ClaimLinks).HasForeignKey(x => x.EvidenceItemId).OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<InvestigationTask>(entity =>

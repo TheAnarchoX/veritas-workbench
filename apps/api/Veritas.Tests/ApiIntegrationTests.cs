@@ -100,6 +100,53 @@ public sealed class ApiIntegrationTests
     }
 
     [Fact]
+    public async Task Text_triage_creates_completed_analysis_run()
+    {
+        using var factory = new TestApiFactory();
+        var client = await factory.CreateReadyClientAsync();
+        var dossier = await CreateDossierAsync(client);
+
+        var response = await client.PostAsJsonAsync($"/api/dossiers/{dossier.Id}/text/triage", new
+        {
+            title = "Text sample",
+            text = "This is a lightweight text triage sample for cautious review."
+        });
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var result = await ReadAsync<TextTriageResultDto>(response);
+        Assert.Equal("Text", result.Evidence.Type);
+        var run = Assert.Single(result.Evidence.AnalysisRuns);
+        Assert.Equal("text-triage", run.Pipeline);
+        Assert.Equal("Completed", run.Status);
+        Assert.NotNull(run.StartedAt);
+        Assert.NotNull(run.CompletedAt);
+        Assert.Contains("signalText", run.ResultJson);
+        Assert.Equal(run.Id, result.Finding.AnalysisRunId);
+    }
+
+    [Fact]
+    public async Task Text_evidence_analysis_can_be_rerun()
+    {
+        using var factory = new TestApiFactory();
+        var client = await factory.CreateReadyClientAsync();
+        var dossier = await CreateDossierAsync(client);
+        var triageResponse = await client.PostAsJsonAsync($"/api/dossiers/{dossier.Id}/text/triage", new
+        {
+            title = "Retry text sample",
+            text = "This is a retryable text triage sample with robust generic phrasing."
+        });
+        var triage = await ReadAsync<TextTriageResultDto>(triageResponse);
+
+        var rerunResponse = await client.PostAsync($"/api/evidence/{triage.Evidence.Id}/analysis/text", null);
+
+        Assert.Equal(HttpStatusCode.Created, rerunResponse.StatusCode);
+        var run = await ReadAsync<AnalysisRunDto>(rerunResponse);
+        Assert.Equal("text-triage", run.Pipeline);
+        Assert.Equal("Completed", run.Status);
+        Assert.Contains("signalText", run.ResultJson);
+    }
+
+    [Fact]
     public async Task Analysis_run_status_transitions_are_persisted()
     {
         using var factory = new TestApiFactory();
@@ -193,6 +240,37 @@ public sealed class ApiIntegrationTests
     }
 
     [Fact]
+    public async Task Claims_can_link_evidence_with_stance()
+    {
+        using var factory = new TestApiFactory();
+        var client = await factory.CreateReadyClientAsync();
+        var dossier = await CreateDossierAsync(client);
+        var evidence = await UploadTinyEvidenceAsync(client, dossier.Id);
+
+        var claimResponse = await client.PostAsJsonAsync($"/api/dossiers/{dossier.Id}/claims", new
+        {
+            text = "The media was reposted.",
+            status = "Weak",
+            confidence = "Low",
+            evidenceItemId = evidence.Id,
+            evidenceStance = "Supports",
+            evidenceNote = "Uploaded evidence shows the relevant media."
+        });
+
+        var claim = await ReadAsync<ClaimDto>(claimResponse);
+        var link = Assert.Single(claim.EvidenceLinks);
+        Assert.Equal(evidence.Id, link.EvidenceItemId);
+        Assert.Equal("Supports", link.Stance);
+
+        var patchResponse = await client.PatchAsJsonAsync($"/api/claim-evidence-links/{link.Id}", new { stance = "Mixed", note = "Partially supports the claim." });
+        var patched = await ReadAsync<ClaimEvidenceLinkDto>(patchResponse);
+        Assert.Equal("Mixed", patched.Stance);
+
+        var deleteResponse = await client.DeleteAsync($"/api/claim-evidence-links/{link.Id}");
+        Assert.Equal(HttpStatusCode.NoContent, deleteResponse.StatusCode);
+    }
+
+    [Fact]
     public async Task Entity_relations_can_be_created_updated_listed_and_deleted()
     {
         using var factory = new TestApiFactory();
@@ -243,6 +321,31 @@ public sealed class ApiIntegrationTests
         Assert.Equal(HttpStatusCode.NoContent, delete.StatusCode);
         listed = await client.GetFromJsonAsync<List<DossierEntityRelationDto>>($"/api/dossiers/{dossier.Id}/entity-relations", JsonOptions);
         Assert.DoesNotContain(listed!, x => x.Id == relation.Id);
+    }
+
+    [Fact]
+    public async Task Sources_can_link_author_entity()
+    {
+        using var factory = new TestApiFactory(robotsAllowed: true);
+        var client = await factory.CreateReadyClientAsync();
+        var dossier = await CreateDossierAsync(client);
+        var entityResponse = await client.PostAsJsonAsync($"/api/dossiers/{dossier.Id}/entities", new { kind = "SocialAccount", name = "Account A", handle = "@a", confidence = "Medium" });
+        var entity = await ReadAsync<DossierEntityDto>(entityResponse);
+
+        var sourceResponse = await client.PostAsJsonAsync($"/api/dossiers/{dossier.Id}/sources/url", new
+        {
+            url = "https://example.test/post/1",
+            title = "Entity authored post",
+            authorEntityId = entity.Id
+        });
+
+        var source = await ReadAsync<SourceDto>(sourceResponse);
+        Assert.Equal(entity.Id, source.AuthorEntityId);
+
+        var patchResponse = await client.PatchAsJsonAsync($"/api/sources/{source.Id}", new { clearAuthorEntity = true, authorHandle = "@fallback" });
+        var patched = await ReadAsync<SourceDto>(patchResponse);
+        Assert.Null(patched.AuthorEntityId);
+        Assert.Equal("@fallback", patched.AuthorHandle);
     }
 
     [Fact]
@@ -362,11 +465,13 @@ public sealed class ApiIntegrationTests
     private sealed record ProjectDetails(ProjectDto Project, List<DossierDto> Dossiers);
     private sealed record ProjectDto(Guid Id, string Name, string? Description, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, int DossierCount);
     private sealed record DossierDto(Guid Id, Guid ProjectId, string Title, string? Summary, string Status, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
-    private sealed record SourceDto(Guid Id, Guid DossierId, string Type, string? Url, string? Platform, string? Title, string? AuthorHandle, DateTimeOffset? ObservedAt, DateTimeOffset? FirstSeenAt, string CollectionStatus, string? RobotsDecision, string? Notes);
+    private sealed record SourceDto(Guid Id, Guid DossierId, string Type, string? Url, string? Platform, string? Title, string? AuthorHandle, Guid? AuthorEntityId, DateTimeOffset? ObservedAt, DateTimeOffset? FirstSeenAt, string CollectionStatus, string? RobotsDecision, string? Notes);
     private sealed record EvidenceDto(Guid Id, Guid DossierId, Guid? SourceId, string Type, string Title, string? Description, string? OriginalFilename, string? ContentHashSha256, string? PerceptualHash, string? MimeType, long? FileSizeBytes, int? Width, int? Height, double? DurationSeconds, DateTimeOffset? CapturedAt, DateTimeOffset UploadedAt, string ProvenanceStatus, string FileUrl, List<AnalysisRunDto> AnalysisRuns);
-    private sealed record AnalysisRunDto(Guid Id, Guid EvidenceItemId, string Pipeline, string Status, DateTimeOffset? StartedAt, DateTimeOffset? CompletedAt, string? ToolVersion, string? Summary, string? Error, List<object> Artifacts);
+    private sealed record AnalysisRunDto(Guid Id, Guid EvidenceItemId, string Pipeline, string Status, DateTimeOffset? StartedAt, DateTimeOffset? CompletedAt, string? ToolVersion, string? Summary, string? Error, string? ResultJson, List<object> Artifacts);
+    private sealed record TextTriageResultDto(EvidenceDto Evidence, FindingDto Finding, List<InvestigationTaskDto> Tasks, TimelineEntryDto TimelineEntry, List<string> Signals);
     private sealed record FindingDto(Guid Id, Guid DossierId, Guid? EvidenceItemId, Guid? AnalysisRunId, string Category, string Claim, string Confidence, string Direction, string Evidence, string Limitations, string FalsificationPath, DateTimeOffset CreatedAt);
-    private sealed record ClaimDto(Guid Id, Guid DossierId, string Text, string Status, string Confidence, string? Rationale, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
+    private sealed record ClaimDto(Guid Id, Guid DossierId, string Text, string Status, string Confidence, string? Rationale, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, List<ClaimEvidenceLinkDto> EvidenceLinks);
+    private sealed record ClaimEvidenceLinkDto(Guid Id, Guid ClaimId, Guid EvidenceItemId, string Stance, string? Note, DateTimeOffset CreatedAt);
     private sealed record InvestigationTaskDto(Guid Id, Guid DossierId, string Title, string? Description, string Status, string Priority, string TaskType, DateTimeOffset CreatedAt, DateTimeOffset? CompletedAt);
     private sealed record TimelineEntryDto(Guid Id, Guid DossierId, DateTimeOffset Time, string? Platform, string? Url, string? Source, string? EvidenceHash, string? Caption, bool FirstKnownAppearance, string? Notes, string Confidence);
     private sealed record DossierEntityDto(Guid Id, Guid DossierId, string Kind, string Name, string? Handle, string? Platform, string? Url, string? Notes, string Confidence, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);

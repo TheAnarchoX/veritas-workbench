@@ -27,5 +27,6 @@ public sealed class EvidenceItem
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public List<AnalysisRun> AnalysisRuns { get; set; } = [];
     public List<Finding> Findings { get; set; } = [];
+    public List<ClaimEvidenceLink> ClaimLinks { get; set; } = [];
     public List<ChainOfCustodyEvent> ChainOfCustodyEvents { get; set; } = [];
 }

@@ -12,6 +12,8 @@ public sealed class Source
     public string? Platform { get; set; }
     public string? Title { get; set; }
     public string? AuthorHandle { get; set; }
+    public Guid? AuthorEntityId { get; set; }
+    public DossierEntity? AuthorEntity { get; set; }
     public DateTimeOffset? ObservedAt { get; set; }
     public DateTimeOffset? FirstSeenAt { get; set; }
     public CollectionStatus CollectionStatus { get; set; } = CollectionStatus.NotStarted;

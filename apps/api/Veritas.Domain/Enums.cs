@@ -101,6 +101,14 @@ public enum ClaimStatus
     Disproved
 }
 
+public enum EvidenceStance
+{
+    Supports,
+    Contradicts,
+    Mixed,
+    Contextual
+}
+
 public enum InvestigationTaskStatus
 {
     Open,

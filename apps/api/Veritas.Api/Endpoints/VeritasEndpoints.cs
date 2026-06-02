@@ -79,7 +79,7 @@ public static class VeritasEndpoints
                 .Include(x => x.Sources)
                 .Include(x => x.EvidenceItems).ThenInclude(x => x.AnalysisRuns).ThenInclude(x => x.Artifacts)
                 .Include(x => x.Findings)
-                .Include(x => x.Claims)
+                .Include(x => x.Claims).ThenInclude(x => x.EvidenceLinks)
                 .Include(x => x.Tasks)
                 .Include(x => x.TimelineEntries)
                 .Include(x => x.Entities)
@@ -158,6 +158,7 @@ public static class VeritasEndpoints
                 return Results.BadRequest(new { error = ex.Message });
             }
         });
+        api.MapPost("/evidence/{id:guid}/analysis/text", RerunTextAnalysisAsync);
 
         api.MapGet("/evidence/{id:guid}/analysis-runs", async (Guid id, VeritasDbContext db, CancellationToken ct) =>
         {
@@ -179,11 +180,14 @@ public static class VeritasEndpoints
 
         api.MapGet("/dossiers/{id:guid}/claims", async (Guid id, VeritasDbContext db, CancellationToken ct) =>
         {
-            var claims = await db.Claims.Where(x => x.DossierId == id).ToListAsync(ct);
+            var claims = await db.Claims.Include(x => x.EvidenceLinks).Where(x => x.DossierId == id).ToListAsync(ct);
             return Results.Ok(claims.OrderBy(x => x.CreatedAt).Select(ClaimDto.From));
         });
         api.MapPost("/dossiers/{id:guid}/claims", CreateClaimAsync);
+        api.MapPost("/claims/{id:guid}/evidence", LinkClaimEvidenceAsync);
         api.MapPatch("/claims/{id:guid}", PatchClaimAsync);
+        api.MapPatch("/claim-evidence-links/{id:guid}", PatchClaimEvidenceAsync);
+        api.MapDelete("/claim-evidence-links/{id:guid}", DeleteClaimEvidenceAsync);
         api.MapDelete("/claims/{id:guid}", DeleteClaimAsync);
 
         api.MapGet("/dossiers/{id:guid}/tasks", async (Guid id, VeritasDbContext db, CancellationToken ct) =>
@@ -269,6 +273,15 @@ public static class VeritasEndpoints
             return Results.NotFound();
         }
 
+        if (request.AuthorEntityId is not null)
+        {
+            var entityExists = await db.DossierEntities.AnyAsync(x => x.Id == request.AuthorEntityId && x.DossierId == id, ct);
+            if (!entityExists)
+            {
+                return Results.BadRequest(new { error = "Author entity must belong to the same dossier." });
+            }
+        }
+
         var platform = GuessPlatform(uri);
         var userAgent = configuration["Robots:UserAgent"] ?? "VeritasWorkbench/0.1";
         var decision = await robots.CanFetchAsync(uri, userAgent, ct);
@@ -282,6 +295,7 @@ public static class VeritasEndpoints
             Platform = platform,
             Title = request.Title,
             AuthorHandle = request.AuthorHandle,
+            AuthorEntityId = request.AuthorEntityId,
             ObservedAt = request.ObservedAt ?? DateTimeOffset.UtcNow,
             CollectionStatus = requiresManual
                 ? decision.Allowed ? CollectionStatus.RequiresManualInput : CollectionStatus.BlockedByRobots
@@ -340,6 +354,22 @@ public static class VeritasEndpoints
         if (source is null)
         {
             return Results.NotFound();
+        }
+
+        if (request.AuthorEntityId is not null)
+        {
+            var entityExists = await db.DossierEntities.AnyAsync(x => x.Id == request.AuthorEntityId && x.DossierId == source.DossierId, ct);
+            if (!entityExists)
+            {
+                return Results.BadRequest(new { error = "Author entity must belong to the same dossier." });
+            }
+
+            source.AuthorEntityId = request.AuthorEntityId;
+        }
+
+        if (request.ClearAuthorEntity is true)
+        {
+            source.AuthorEntityId = null;
         }
 
         if (request.Title is not null) source.Title = request.Title.Trim();
@@ -482,7 +512,7 @@ public static class VeritasEndpoints
         var stored = await storage.SaveAsync(input, $"{SanitizeTitle(title)}.txt", "text/plain", ct);
         var hash = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
         var signals = DetectTextSignals(request.Text);
-        var signalText = signals.Count == 0 ? "No strong stylometric or boilerplate signals were triggered by this lightweight triage." : string.Join("; ", signals);
+        var signalText = TextSignalSummary(signals);
 
         var evidence = new EvidenceItem
         {
@@ -499,10 +529,14 @@ public static class VeritasEndpoints
             ProvenanceStatus = ProvenanceStatus.Unknown
         };
 
+        var run = CreateTextTriageRun(evidence.Id, title, signals, signalText);
+        evidence.AnalysisRuns.Add(run);
+
         var finding = new Finding
         {
             DossierId = id,
             EvidenceItemId = evidence.Id,
+            AnalysisRunId = run.Id,
             Category = FindingCategory.ManualObservation,
             Claim = signals.Count == 0
                 ? "Lightweight text triage did not find strong AI-style boilerplate signals."
@@ -537,6 +571,7 @@ public static class VeritasEndpoints
         };
 
         db.EvidenceItems.Add(evidence);
+        db.AnalysisRuns.Add(run);
         db.Findings.Add(finding);
         db.InvestigationTasks.Add(task);
         db.TimelineEntries.Add(timelineEntry);
@@ -661,6 +696,53 @@ public static class VeritasEndpoints
         return Results.File(zipStream.ToArray(), "application/zip", $"analysis-run-{run.Id:N}-artifacts.zip");
     }
 
+    private static async Task<IResult> RerunTextAnalysisAsync(Guid id, VeritasDbContext db, IEvidenceStorage storage, CancellationToken ct)
+    {
+        var evidence = await db.EvidenceItems.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (evidence is null)
+        {
+            return Results.NotFound();
+        }
+
+        if (evidence.Type != EvidenceType.Text && !(evidence.MimeType?.StartsWith("text/", StringComparison.OrdinalIgnoreCase) ?? false))
+        {
+            return Results.BadRequest(new { error = "Text analysis can only be run on text evidence." });
+        }
+
+        await using var stream = await storage.OpenReadAsync(evidence.StoragePath, ct);
+        using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+        var text = await reader.ReadToEndAsync(ct);
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return Results.BadRequest(new { error = "Text evidence is empty." });
+        }
+
+        var signals = DetectTextSignals(text);
+        var signalText = TextSignalSummary(signals);
+        var run = CreateTextTriageRun(evidence.Id, evidence.Title, signals, signalText);
+        var finding = new Finding
+        {
+            DossierId = evidence.DossierId,
+            EvidenceItemId = evidence.Id,
+            AnalysisRunId = run.Id,
+            Category = FindingCategory.ManualObservation,
+            Claim = signals.Count == 0
+                ? "Rerun text triage did not find strong AI-style boilerplate signals."
+                : "Rerun text triage found AI-style or low-specificity writing signals that need manual review.",
+            Confidence = signals.Count >= 4 ? ConfidenceLevel.Medium : ConfidenceLevel.Low,
+            Direction = signals.Count == 0 ? FindingDirection.Neutral : FindingDirection.Inconclusive,
+            Evidence = signalText,
+            Limitations = "Stylometric cues are weak signals. Edited human text, templates, translations, corporate style guides, and accessibility rewrites can produce similar patterns.",
+            FalsificationPath = "Compare with known writing by the same account, platform edit history, drafts, timestamps, and source-specific context."
+        };
+
+        db.AnalysisRuns.Add(run);
+        db.Findings.Add(finding);
+        AddWorkflowTimeline(db, evidence.DossierId, $"Text analysis rerun: {ShortText(evidence.Title)}", "Text triage", null, finding.Confidence, signalText);
+        await db.SaveChangesAsync(ct);
+        return Results.Created($"/api/evidence/{id}/analysis-runs", AnalysisRunDto.From(run));
+    }
+
     private static async Task<IResult> CreateFindingAsync(Guid id, CreateFindingRequest request, VeritasDbContext db, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(request.Claim))
@@ -777,6 +859,24 @@ public static class VeritasEndpoints
         };
 
         db.Claims.Add(claim);
+
+        if (request.EvidenceItemId is not null)
+        {
+            var evidenceExists = await db.EvidenceItems.AnyAsync(x => x.Id == request.EvidenceItemId && x.DossierId == id, ct);
+            if (!evidenceExists)
+            {
+                return Results.BadRequest(new { error = "Linked evidence must belong to the same dossier." });
+            }
+
+            claim.EvidenceLinks.Add(new ClaimEvidenceLink
+            {
+                ClaimId = claim.Id,
+                EvidenceItemId = request.EvidenceItemId.Value,
+                Stance = ParseEnum(request.EvidenceStance, EvidenceStance.Contextual),
+                Note = request.EvidenceNote
+            });
+        }
+
         AddWorkflowTimeline(db, id, $"Claim opened: {ShortText(claim.Text)}", "Claim", null, claim.Confidence, claim.Rationale);
         await db.SaveChangesAsync(ct);
         return Results.Created($"/api/dossiers/{id}/claims", ClaimDto.From(claim));
@@ -784,7 +884,7 @@ public static class VeritasEndpoints
 
     private static async Task<IResult> PatchClaimAsync(Guid id, PatchClaimRequest request, VeritasDbContext db, CancellationToken ct)
     {
-        var claim = await db.Claims.FirstOrDefaultAsync(x => x.Id == id, ct);
+        var claim = await db.Claims.Include(x => x.EvidenceLinks).FirstOrDefaultAsync(x => x.Id == id, ct);
         if (claim is null)
         {
             return Results.NotFound();
@@ -827,6 +927,77 @@ public static class VeritasEndpoints
 
         await db.SaveChangesAsync(ct);
         return Results.Ok(ClaimDto.From(claim));
+    }
+
+    private static async Task<IResult> LinkClaimEvidenceAsync(Guid id, LinkClaimEvidenceRequest request, VeritasDbContext db, CancellationToken ct)
+    {
+        var claim = await db.Claims.Include(x => x.EvidenceLinks).FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (claim is null)
+        {
+            return Results.NotFound();
+        }
+
+        var evidenceExists = await db.EvidenceItems.AnyAsync(x => x.Id == request.EvidenceItemId && x.DossierId == claim.DossierId, ct);
+        if (!evidenceExists)
+        {
+            return Results.BadRequest(new { error = "Linked evidence must belong to the same dossier as the claim." });
+        }
+
+        var existing = claim.EvidenceLinks.FirstOrDefault(x => x.EvidenceItemId == request.EvidenceItemId);
+        if (existing is not null)
+        {
+            existing.Stance = ParseEnum(request.Stance, existing.Stance);
+            existing.Note = request.Note;
+            await db.SaveChangesAsync(ct);
+            return Results.Ok(ClaimEvidenceLinkDto.From(existing));
+        }
+
+        var link = new ClaimEvidenceLink
+        {
+            ClaimId = claim.Id,
+            EvidenceItemId = request.EvidenceItemId,
+            Stance = ParseEnum(request.Stance, EvidenceStance.Contextual),
+            Note = request.Note
+        };
+        db.ClaimEvidenceLinks.Add(link);
+        AddWorkflowTimeline(db, claim.DossierId, $"Claim evidence linked: {ShortText(claim.Text)}", "Claim evidence", null, claim.Confidence, request.Note);
+        await db.SaveChangesAsync(ct);
+        return Results.Created($"/api/claim-evidence-links/{link.Id}", ClaimEvidenceLinkDto.From(link));
+    }
+
+    private static async Task<IResult> PatchClaimEvidenceAsync(Guid id, PatchClaimEvidenceRequest request, VeritasDbContext db, CancellationToken ct)
+    {
+        var link = await db.ClaimEvidenceLinks.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (link is null)
+        {
+            return Results.NotFound();
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.Stance))
+        {
+            link.Stance = ParseEnum(request.Stance, link.Stance);
+        }
+
+        if (request.Note is not null)
+        {
+            link.Note = request.Note;
+        }
+
+        await db.SaveChangesAsync(ct);
+        return Results.Ok(ClaimEvidenceLinkDto.From(link));
+    }
+
+    private static async Task<IResult> DeleteClaimEvidenceAsync(Guid id, VeritasDbContext db, CancellationToken ct)
+    {
+        var link = await db.ClaimEvidenceLinks.FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (link is null)
+        {
+            return Results.NotFound();
+        }
+
+        db.ClaimEvidenceLinks.Remove(link);
+        await db.SaveChangesAsync(ct);
+        return Results.NoContent();
     }
 
     private static async Task<IResult> DeleteClaimAsync(Guid id, VeritasDbContext db, CancellationToken ct)
@@ -1336,6 +1507,16 @@ public static class VeritasEndpoints
             : fallback;
     }
 
+    private static EvidenceStance StanceFromFindingDirection(FindingDirection direction)
+    {
+        return direction switch
+        {
+            FindingDirection.Neutral => EvidenceStance.Contextual,
+            FindingDirection.Inconclusive => EvidenceStance.Mixed,
+            _ => EvidenceStance.Supports
+        };
+    }
+
     private static Guid? TryParseGuid(string? value)
     {
         return Guid.TryParse(value, out var parsed) ? parsed : null;
@@ -1433,6 +1614,37 @@ public static class VeritasEndpoints
         }
 
         return signals.Distinct().Take(8).ToList();
+    }
+
+    private static string TextSignalSummary(IReadOnlyCollection<string> signals)
+    {
+        return signals.Count == 0
+            ? "No strong stylometric or boilerplate signals were triggered by this lightweight triage."
+            : string.Join("; ", signals);
+    }
+
+    private static AnalysisRun CreateTextTriageRun(Guid evidenceId, string title, IReadOnlyList<string> signals, string signalText)
+    {
+        var now = DateTimeOffset.UtcNow;
+        return new AnalysisRun
+        {
+            EvidenceItemId = evidenceId,
+            Pipeline = "text-triage",
+            Status = AnalysisStatus.Completed,
+            StartedAt = now,
+            CompletedAt = now,
+            ToolVersion = "lightweight-text-triage",
+            Summary = signals.Count == 0
+                ? "Completed lightweight text triage; no strong AI-style boilerplate signals were detected."
+                : "Completed lightweight text triage; signals require cautious manual review.",
+            ResultJson = JsonSerializer.Serialize(new
+            {
+                title,
+                signals,
+                signalText,
+                limitation = "Stylometric cues are weak signals and should not be used alone."
+            }, JsonOptions)
+        };
     }
 
     private static string NonBlank(string? value, string fallback)

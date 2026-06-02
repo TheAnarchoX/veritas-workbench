@@ -1,10 +1,10 @@
 import {
-  Activity,
   AlertTriangle,
   Archive,
   ArrowRight,
   Bot,
   CheckCircle2,
+  Clock,
   ClipboardList,
   Database,
   Download,
@@ -71,11 +71,11 @@ type LoadState<T> = {
   loading: boolean
 }
 
-const tabs = ['Overview', 'Sources', 'Entities', 'Evidence', 'Findings', 'Claims', 'Tasks', 'Timeline', 'Report']
 type Theme = 'light' | 'dark'
 
 const confidenceLevels = ['None', 'Low', 'Medium', 'High']
 const claimStatuses = ['Unassessed', 'Unsupported', 'Weak', 'Plausible', 'Likely', 'Confirmed', 'Disproved']
+const evidenceStances = ['Supports', 'Contradicts', 'Mixed', 'Contextual']
 const taskStatuses = ['Open', 'InProgress', 'Done', 'Blocked', 'WontDo']
 const taskTypes = ['ProvideOriginalMedia', 'ReverseImageSearch', 'ExtractVideoFrames', 'CheckRobots', 'ManualVerification', 'SourceChronology', 'AccountTimeline', 'TextAuthenticityReview', 'Other']
 const priorities = ['Low', 'Medium', 'High']
@@ -108,6 +108,18 @@ function fromDateTimeLocal(value: string) {
 function shortLabel(value?: string, fallback = 'Untitled') {
   if (!value) return fallback
   return value.length > 80 ? `${value.slice(0, 80)}...` : value
+}
+
+function stanceFromFindingDirection(direction: string) {
+  if (direction === 'Neutral') return 'Contextual'
+  if (direction === 'Inconclusive') return 'Mixed'
+  return 'Supports'
+}
+
+function sourceAuthorLabel(source: Source, entities: DossierEntity[]) {
+  const entity = source.authorEntityId ? entities.find((item) => item.id === source.authorEntityId) : undefined
+  if (entity) return `${entity.name}${entity.handle ? ` (${entity.handle})` : ''}`
+  return source.authorHandle || 'Unlinked author'
 }
 
 export default function App() {
@@ -336,39 +348,69 @@ function ProjectPage() {
   if (state.error || !state.data) return <InlineStatus icon={<AlertTriangle size={16} />} text={state.error || 'Project not found'} tone="warning" />
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[360px_1fr]">
-      <Panel title="New Dossier" icon={<Plus size={17} />}>
-        <form className="space-y-3" onSubmit={create}>
-          <Field label="Title">
-            <input className="input" value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Example dossier" />
-          </Field>
-          <Field label="Summary">
-            <textarea className="input min-h-24" value={summary} onChange={(event) => setSummary(event.target.value)} placeholder="Working theory, scope, limitations" />
-          </Field>
-          <button className="btn-primary" type="submit">
-            <Plus size={16} aria-hidden="true" />
-            Create dossier
-          </button>
-        </form>
-      </Panel>
-      <Panel title={state.data.project.name} icon={<FolderKanban size={17} />}>
-        <p className="mb-4 text-sm text-zinc-600">{state.data.project.description || 'No description'}</p>
-        <div className="grid gap-2">
-          {state.data.dossiers.map((dossier) => (
-            <Link key={dossier.id} to={`/dossiers/${dossier.id}`} className="rounded-md border border-zinc-300 bg-white p-3 hover:border-emerald-700">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <h2 className="text-base font-semibold">{dossier.title}</h2>
-                  <p className="mt-1 text-sm text-zinc-600">{dossier.summary || 'No summary'}</p>
+    <div>
+      <ProjectOverview project={state.data.project} dossiers={state.data.dossiers} />
+      <div className="grid lg:grid-cols-[360px_1fr]">
+        <Panel title="New Dossier" icon={<Plus size={17} />}>
+          <form className="space-y-3" onSubmit={create}>
+            <Field label="Title">
+              <input className="input" value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Example dossier" />
+            </Field>
+            <Field label="Summary">
+              <textarea className="input min-h-24" value={summary} onChange={(event) => setSummary(event.target.value)} placeholder="Working theory, scope, limitations" />
+            </Field>
+            <button className="btn-primary" type="submit">
+              <Plus size={16} aria-hidden="true" />
+              Create dossier
+            </button>
+          </form>
+        </Panel>
+        <Panel title="Dossiers" icon={<FolderKanban size={17} />}>
+          <div className="grid gap-2">
+            {state.data.dossiers.map((dossier) => (
+              <Link key={dossier.id} to={`/dossiers/${dossier.id}`} className="matrix-row rounded-md border border-zinc-300 bg-white p-3 hover:border-emerald-700">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <h2 className="truncate text-base font-semibold">{dossier.title}</h2>
+                    <p className="mt-1 text-sm text-zinc-600">{dossier.summary || 'No summary'}</p>
+                    <p className="mt-2 text-xs text-zinc-500">Updated {new Date(dossier.updatedAt).toLocaleString()}</p>
+                  </div>
+                  <Badge tone={dossier.status === 'Active' ? 'green' : 'zinc'}>{dossier.status}</Badge>
                 </div>
-                <Badge tone="green">{dossier.status}</Badge>
-              </div>
-            </Link>
-          ))}
-          {state.data.dossiers.length === 0 && <Empty text="No dossiers in this project." />}
-        </div>
-      </Panel>
+              </Link>
+            ))}
+            {state.data.dossiers.length === 0 && <Empty text="No dossiers in this project." />}
+          </div>
+        </Panel>
+      </div>
     </div>
+  )
+}
+
+function ProjectOverview({ project, dossiers }: { project: Project; dossiers: Dossier[] }) {
+  const active = dossiers.filter((dossier) => dossier.status === 'Active').length
+  const latest = [...dossiers].sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))[0]
+  const withSummary = dossiers.filter((dossier) => dossier.summary?.trim()).length
+
+  return (
+    <Panel title={project.name} icon={<FolderKanban size={17} />}>
+      <div className="grid gap-3 lg:grid-cols-[1fr_auto]">
+        <div>
+          <p className="text-sm text-zinc-600">{project.description || 'No project description recorded.'}</p>
+          <div className="mt-3 grid gap-2 sm:grid-cols-3">
+            <StatusTile label="Dossiers" value={String(dossiers.length)} detail={`${active} active`} tone={active ? 'green' : 'zinc'} />
+            <StatusTile label="Scoped" value={`${withSummary}/${dossiers.length}`} detail="with summaries" tone={withSummary === dossiers.length && dossiers.length > 0 ? 'green' : 'amber'} />
+            <StatusTile label="Latest update" value={latest ? new Date(latest.updatedAt).toLocaleDateString() : '-'} detail={latest?.title || 'No dossier activity'} tone={latest ? 'green' : 'zinc'} />
+          </div>
+        </div>
+        <div className="min-w-64 rounded-md border border-zinc-300 bg-white p-3">
+          <div className="text-xs font-semibold uppercase text-zinc-500">Project posture</div>
+          <div className="mt-2 text-sm text-zinc-700">
+            {dossiers.length === 0 ? 'Create the first dossier to start collecting sources and evidence.' : `${active} active dossiers are available for source collection, evidence analysis, and reporting.`}
+          </div>
+        </div>
+      </div>
+    </Panel>
   )
 }
 
@@ -418,16 +460,6 @@ export function DossierTabs({
   onTab?: (tab: string) => void
   onRefresh?: () => void
 }) {
-  const counts = {
-    Evidence: bundle.evidence.length,
-    Sources: bundle.sources.length,
-    Entities: bundle.entities.length,
-    Findings: bundle.findings.length,
-    Claims: bundle.claims.length,
-    Tasks: bundle.tasks.length,
-    Timeline: bundle.timeline.length,
-  }
-
   return (
     <div className="workspace-surface">
       <section className="workspace-hero border border-zinc-300 bg-white p-4">
@@ -455,28 +487,13 @@ export function DossierTabs({
       <div className="grid xl:grid-cols-[280px_1fr]">
         <WorkflowRail bundle={bundle} activeTab={activeTab} onTab={onTab} />
         <div className="min-w-0">
-          <div className="section-strip flex overflow-x-auto border-x border-b border-zinc-300 bg-white" role="tablist" aria-label="dossier sections">
-            {tabs.map((tab) => (
-              <button
-                key={tab}
-                type="button"
-                role="tab"
-                aria-selected={activeTab === tab}
-                className={`section-tab h-11 shrink-0 border-r border-zinc-300 px-4 text-sm font-medium ${activeTab === tab ? 'active text-zinc-950' : 'text-zinc-600 hover:text-zinc-950'}`}
-                onClick={() => onTab?.(tab)}
-              >
-                {tab} {tab in counts ? <span className="ml-1 font-mono text-xs opacity-70">{counts[tab as keyof typeof counts]}</span> : null}
-              </button>
-            ))}
-          </div>
-          <div className="workspace-content border-x border-b border-zinc-300 bg-white p-0">
-
+          <div className="workspace-content border border-zinc-300 bg-white p-0">
             {activeTab === 'Overview' && <OverviewTab bundle={bundle} onTab={onTab} />}
             {activeTab === 'Evidence' && <EvidenceTab dossierId={bundle.dossier.id} evidence={bundle.evidence} sources={bundle.sources} onRefresh={onRefresh} />}
-            {activeTab === 'Sources' && <SourcesTab dossierId={bundle.dossier.id} sources={bundle.sources} evidence={bundle.evidence} onRefresh={onRefresh} />}
             {activeTab === 'Entities' && <EntitiesTab dossierId={bundle.dossier.id} entities={bundle.entities} relations={bundle.entityRelations} onRefresh={onRefresh} />}
+            {activeTab === 'Sources' && <SourcesTab dossierId={bundle.dossier.id} sources={bundle.sources} evidence={bundle.evidence} entities={bundle.entities} onRefresh={onRefresh} />}
             {activeTab === 'Findings' && <FindingsTab dossierId={bundle.dossier.id} findings={bundle.findings} evidence={bundle.evidence} onRefresh={onRefresh} />}
-            {activeTab === 'Claims' && <ClaimsTab dossierId={bundle.dossier.id} claims={bundle.claims} onRefresh={onRefresh} />}
+            {activeTab === 'Claims' && <ClaimsTab dossierId={bundle.dossier.id} claims={bundle.claims} evidence={bundle.evidence} onRefresh={onRefresh} />}
             {activeTab === 'Tasks' && <TasksTab dossierId={bundle.dossier.id} tasks={bundle.tasks} onRefresh={onRefresh} />}
             {activeTab === 'Timeline' && <TimelineTab dossierId={bundle.dossier.id} timeline={bundle.timeline} onRefresh={onRefresh} />}
             {activeTab === 'Report' && <InlineReport dossierId={bundle.dossier.id} />}
@@ -500,38 +517,67 @@ function getRunStats(bundle: DossierBundle) {
 function WorkflowRail({ bundle, activeTab, onTab }: { bundle: DossierBundle; activeTab: string; onTab?: (tab: string) => void }) {
   const openTasks = bundle.tasks.filter((task) => task.status !== 'Done').length
   const runStats = getRunStats(bundle)
-  const steps = [
-    { label: '1. Intake', tab: 'Sources', icon: <Search size={16} />, metric: `${bundle.sources.length} sources`, ready: bundle.sources.length > 0 },
-    { label: '2. Entities', tab: 'Entities', icon: <UserRound size={16} />, metric: `${bundle.entities.length} entities`, ready: bundle.entities.length > 0 },
-    { label: '3. Evidence and analysis', tab: 'Evidence', icon: <Activity size={16} />, metric: `${runStats.completed}/${runStats.runs.length} runs`, ready: bundle.evidence.length > 0 },
-    { label: '4. Corroborate', tab: 'Findings', icon: <Network size={16} />, metric: `${bundle.findings.length} findings`, ready: bundle.findings.length > 0 },
-    { label: '5. Resolve', tab: 'Claims', icon: <FileText size={16} />, metric: `${bundle.claims.length} claims`, ready: bundle.claims.length > 0 },
-    { label: '6. Report', tab: 'Report', icon: <FileArchive size={16} />, metric: `${openTasks} open tasks`, ready: bundle.claims.length > 0 && openTasks === 0 },
+  const phases = [
+    {
+      label: 'Frame',
+      items: [
+        { label: 'Overview', tab: 'Overview', icon: <RouteIcon size={16} />, metric: `${openTasks} open tasks`, ready: true },
+        { label: 'Entities', tab: 'Entities', icon: <UserRound size={16} />, metric: `${bundle.entities.length} entities`, ready: bundle.entities.length > 0 },
+        { label: 'Sources', tab: 'Sources', icon: <Search size={16} />, metric: `${bundle.sources.length} sources`, ready: bundle.sources.length > 0 },
+      ],
+    },
+    {
+      label: 'Collect and analyze',
+      items: [
+        { label: 'Evidence', tab: 'Evidence', icon: <Database size={16} />, metric: `${bundle.evidence.length} items`, ready: bundle.evidence.length > 0 },
+        { label: 'Timeline', tab: 'Timeline', icon: <Clock size={16} />, metric: `${bundle.timeline.length} events`, ready: bundle.timeline.length > 0 },
+      ],
+    },
+    {
+      label: 'Assess',
+      items: [
+        { label: 'Findings', tab: 'Findings', icon: <Gauge size={16} />, metric: `${bundle.findings.length} findings`, ready: bundle.findings.length > 0 },
+        { label: 'Claims', tab: 'Claims', icon: <FileText size={16} />, metric: `${bundle.claims.length} claims`, ready: bundle.claims.length > 0 },
+      ],
+    },
+    {
+      label: 'Resolve',
+      items: [
+        { label: 'Tasks', tab: 'Tasks', icon: <ListChecks size={16} />, metric: `${openTasks} open`, ready: openTasks === 0 && bundle.tasks.length > 0 },
+        { label: 'Report', tab: 'Report', icon: <FileArchive size={16} />, metric: `${runStats.completed}/${runStats.runs.length} runs`, ready: bundle.claims.length > 0 && openTasks === 0 },
+      ],
+    },
   ]
 
   return (
-    <aside className="workflow-rail rounded-md border border-zinc-300 bg-white p-3">
+    <aside className="workflow-rail border border-zinc-300 bg-white p-3">
       <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-zinc-800">
         <RouteIcon size={16} className="text-emerald-800" aria-hidden="true" />
-        Workflow
+        Dossier workflow
       </div>
-      <div className="space-y-2">
-        {steps.map((step) => (
-          <button
-            key={step.label}
-            type="button"
-            className={`workflow-step w-full rounded-md border p-3 text-left ${activeTab === step.tab ? 'border-emerald-700 bg-emerald-700 text-white' : 'border-zinc-300 bg-white text-zinc-800'}`}
-            onClick={() => onTab?.(step.tab)}
-          >
-            <span className="flex items-center justify-between gap-3">
-              <span className="flex min-w-0 items-center gap-2">
-                {step.icon}
-                <span className="truncate text-sm font-semibold">{step.label}</span>
-              </span>
-              <Badge tone={step.ready ? 'green' : 'zinc'}>{step.ready ? 'active' : 'open'}</Badge>
-            </span>
-            <span className="mt-2 block text-xs opacity-80">{step.metric}</span>
-          </button>
+      <div className="space-y-4">
+        {phases.map((phase) => (
+          <div key={phase.label} className="workflow-phase">
+            <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-zinc-500">{phase.label}</div>
+            <div className="space-y-1">
+              {phase.items.map((step) => (
+                <button
+                  key={step.label}
+                  type="button"
+                  className={`workflow-step w-full border px-3 py-2 text-left ${activeTab === step.tab ? 'active border-emerald-700 text-white' : 'border-zinc-300 bg-white text-zinc-800'}`}
+                  onClick={() => onTab?.(step.tab)}
+                >
+                  <span className="flex items-center justify-between gap-3">
+                    <span className="flex min-w-0 items-center gap-2">
+                      {step.icon}
+                      <span className="truncate text-sm font-semibold">{step.label}</span>
+                    </span>
+                    <span className="shrink-0 font-mono text-[11px] opacity-75">{step.metric}</span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
         ))}
       </div>
     </aside>
@@ -542,66 +588,108 @@ function OverviewTab({ bundle, onTab }: { bundle: DossierBundle; onTab?: (tab: s
   const openTasks = bundle.tasks.filter((task) => task.status !== 'Done').length
   const runStats = getRunStats(bundle)
   const sourceLinkedEvidence = bundle.evidence.filter((item) => item.sourceId).length
-  const latestEvidence = bundle.evidence.slice(0, 5)
+  const unlinkedEvidence = bundle.evidence.filter((item) => !item.sourceId).length
+  const pendingEvidence = bundle.evidence.filter((item) => item.analysisRuns.length === 0 || item.analysisRuns.some((run) => run.status === 'Pending' || run.status === 'Running')).length
+  const failedRuns = runStats.runs.filter((run) => run.status === 'Failed').length
+  const highPriorityTasks = bundle.tasks.filter((task) => task.status !== 'Done' && task.priority === 'High').length
+  const unresolvedClaims = bundle.claims.filter((claim) => claim.status !== 'Confirmed' && claim.status !== 'Disproved').length
+  const latestEvidence = bundle.evidence.slice(0, 6)
+  const nextTasks = bundle.tasks.filter((task) => task.status !== 'Done').slice(0, 4)
 
   return (
-    <div className="space-y-4">
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <Metric label="Evidence" value={bundle.evidence.length} icon={<Database size={17} />} />
-        <Metric label="Linked sources" value={sourceLinkedEvidence} icon={<LinkIcon size={17} />} />
-        <Metric label="Entities" value={bundle.entities.length} icon={<UserRound size={17} />} />
-        <Metric label="Open tasks" value={openTasks} icon={<ListChecks size={17} />} />
+    <div>
+      <div className="grid lg:grid-cols-[1.1fr_0.9fr]">
+        <Panel title="Dossier Status" icon={<RouteIcon size={17} />}>
+          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+            <StatusTile label="Evidence ready" value={`${sourceLinkedEvidence}/${bundle.evidence.length}`} detail="linked to sources" tone={unlinkedEvidence ? 'amber' : 'green'} />
+            <StatusTile label="Analysis" value={`${runStats.completed}/${runStats.runs.length}`} detail={failedRuns ? `${failedRuns} failed` : 'completed runs'} tone={failedRuns ? 'amber' : 'green'} />
+            <StatusTile label="Claims" value={String(bundle.claims.length)} detail={`${unresolvedClaims} unresolved`} tone={unresolvedClaims ? 'amber' : 'green'} />
+            <StatusTile label="Tasks" value={String(openTasks)} detail={`${highPriorityTasks} high priority`} tone={highPriorityTasks ? 'amber' : openTasks ? 'zinc' : 'green'} />
+          </div>
+          <div className="mt-4 grid gap-2 md:grid-cols-4">
+            <FlowNode label="Entities" value={bundle.entities.length} icon={<UserRound size={16} />} onClick={() => onTab?.('Entities')} />
+            <FlowNode label="Sources" value={bundle.sources.length} icon={<Search size={16} />} onClick={() => onTab?.('Sources')} />
+            <FlowNode label="Findings" value={bundle.findings.length} icon={<Gauge size={16} />} onClick={() => onTab?.('Findings')} />
+            <FlowNode label="Timeline" value={bundle.timeline.length} icon={<Clock size={16} />} onClick={() => onTab?.('Timeline')} />
+          </div>
+        </Panel>
+        <Panel title="What Needs Attention" icon={<ClipboardList size={17} />}>
+          <div className="grid gap-2">
+            <AttentionRow label="Unlinked evidence" value={unlinkedEvidence} action="Link sources" onClick={() => onTab?.('Evidence')} />
+            <AttentionRow label="Pending analysis" value={pendingEvidence} action="Open evidence" onClick={() => onTab?.('Evidence')} />
+            <AttentionRow label="Open tasks" value={openTasks} action="Review tasks" onClick={() => onTab?.('Tasks')} />
+            <AttentionRow label="Unresolved claims" value={unresolvedClaims} action="Assess claims" onClick={() => onTab?.('Claims')} />
+          </div>
+        </Panel>
       </div>
 
-      <Panel title="Case Flow" icon={<RouteIcon size={17} />}>
-        <div className="workflow-map grid gap-2 md:grid-cols-6">
-          <FlowNode label="Source" value={bundle.sources.length} icon={<Search size={16} />} onClick={() => onTab?.('Sources')} />
-          <FlowNode label="Entities" value={bundle.entities.length} icon={<UserRound size={16} />} onClick={() => onTab?.('Entities')} />
-          <FlowNode label="Evidence" value={bundle.evidence.length} icon={<Database size={16} />} onClick={() => onTab?.('Evidence')} />
-          <FlowNode label="Runs" value={runStats.completed} suffix={`/${runStats.runs.length}`} icon={<Activity size={16} />} onClick={() => onTab?.('Evidence')} />
-          <FlowNode label="Findings" value={bundle.findings.length} icon={<Gauge size={16} />} onClick={() => onTab?.('Findings')} />
-          <FlowNode label="Claims" value={bundle.claims.length} icon={<FileText size={16} />} onClick={() => onTab?.('Claims')} />
-        </div>
-      </Panel>
-
-      <div className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr]">
-        <Panel title="Evidence Matrix" icon={<Network size={17} />}>
-          <div className="space-y-2">
-            {latestEvidence.map((item) => {
-              const latestRun = item.analysisRuns[0]
-              return (
-                <Link key={item.id} to={`/dossiers/${item.dossierId}/evidence/${item.id}`} className="matrix-row rounded-md border border-zinc-300 bg-white p-3 hover:border-emerald-700">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Badge>{item.type}</Badge>
-                    <Badge tone={item.sourceId ? 'green' : 'amber'}>{item.sourceId ? 'source linked' : 'unlinked source'}</Badge>
-                    <Badge tone={latestRun?.status === 'Completed' ? 'green' : latestRun ? 'amber' : 'zinc'}>{latestRun?.status ?? 'not analyzed'}</Badge>
-                  </div>
-                  <div className="mt-2 flex items-center justify-between gap-3">
-                    <span className="truncate text-sm font-semibold">{item.title}</span>
-                    <ArrowRight size={15} aria-hidden="true" />
-                  </div>
-                  <p className="mt-1 truncate font-mono text-xs text-zinc-600">{item.contentHashSha256 || 'hash pending'}</p>
-                </Link>
-              )
-            })}
+      <div className="grid lg:grid-cols-[1.15fr_0.85fr]">
+        <Panel title="Evidence Readiness" icon={<Network size={17} />}>
+          <div className="grid gap-2">
+            {latestEvidence.map((item) => <EvidenceMatrixRow key={item.id} item={item} />)}
             {bundle.evidence.length === 0 && <Empty text="No evidence uploaded." />}
           </div>
         </Panel>
-        <Panel title="Control Queue" icon={<ClipboardList size={17} />}>
+        <Panel title="Next Actions" icon={<ListChecks size={17} />}>
           <div className="space-y-2">
-            {bundle.tasks.slice(0, 6).map((task) => <TaskRow key={task.id} task={task} />)}
-            {bundle.tasks.length === 0 && <Empty text="No tasks yet." />}
+            {nextTasks.map((task) => <TaskRow key={task.id} task={task} />)}
+            {nextTasks.length === 0 && <Empty text="No open tasks." />}
           </div>
         </Panel>
       </div>
 
       <Panel title="Recent Findings" icon={<Gauge size={17} />}>
-        <div className="grid gap-2 lg:grid-cols-2">
-          {bundle.findings.slice(0, 4).map((finding) => <FindingCard key={finding.id} finding={finding} />)}
+        <div className="grid gap-2 xl:grid-cols-3">
+          {bundle.findings.slice(0, 3).map((finding) => <FindingCard key={finding.id} finding={finding} />)}
           {bundle.findings.length === 0 && <Empty text="No findings yet." />}
         </div>
       </Panel>
     </div>
+  )
+}
+
+function StatusTile({ label, value, detail, tone }: { label: string; value: string; detail: string; tone: 'green' | 'amber' | 'zinc' }) {
+  return (
+    <div className={`status-tile ${tone} rounded-md border p-3`}>
+      <div className="text-xs font-semibold uppercase text-zinc-500">{label}</div>
+      <div className="mt-2 text-2xl font-semibold">{value}</div>
+      <div className="mt-1 text-xs text-zinc-600">{detail}</div>
+    </div>
+  )
+}
+
+function AttentionRow({ label, value, action, onClick }: { label: string; value: number; action: string; onClick: () => void }) {
+  return (
+    <button className="matrix-row flex items-center justify-between gap-3 rounded-md border border-zinc-300 bg-white p-3 text-left hover:border-emerald-700" type="button" onClick={onClick}>
+      <span>
+        <span className="block text-sm font-semibold">{label}</span>
+        <span className="text-xs text-zinc-600">{value === 0 ? 'No action needed' : action}</span>
+      </span>
+      <span className={`rounded border px-2 py-1 font-mono text-sm ${value === 0 ? 'border-emerald-300 text-emerald-900' : 'border-amber-300 text-amber-950'}`}>{value}</span>
+    </button>
+  )
+}
+
+function EvidenceMatrixRow({ item }: { item: EvidenceItem }) {
+  const latestRun = item.analysisRuns[0]
+  const runTone = latestRun?.status === 'Completed' ? 'green' : latestRun ? 'amber' : 'zinc'
+  const runLabel = latestRun?.status ?? 'not analyzed'
+  return (
+    <Link key={item.id} to={`/dossiers/${item.dossierId}/evidence/${item.id}`} className="matrix-row grid gap-3 rounded-md border border-zinc-300 bg-white p-3 hover:border-emerald-700 md:grid-cols-[1fr_auto]">
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge>{item.type}</Badge>
+          <Badge tone={item.sourceId ? 'green' : 'amber'}>{item.sourceId ? 'linked source' : 'needs source'}</Badge>
+          <Badge tone={runTone}>{runLabel}</Badge>
+        </div>
+        <div className="mt-2 truncate text-sm font-semibold">{item.title}</div>
+        <div className="mt-1 text-xs text-zinc-600">{item.description || item.originalFilename || 'No collection note recorded'}</div>
+      </div>
+      <div className="flex items-center gap-2 text-xs text-zinc-500">
+        <span>{item.analysisRuns.length} runs</span>
+        <ArrowRight size={15} aria-hidden="true" />
+      </div>
+    </Link>
   )
 }
 
@@ -732,10 +820,11 @@ function EvidenceRow({ item }: { item: EvidenceItem }) {
   )
 }
 
-function SourcesTab({ dossierId, sources, evidence, onRefresh }: { dossierId: string; sources: Source[]; evidence: EvidenceItem[]; onRefresh?: () => void }) {
+function SourcesTab({ dossierId, sources, evidence, entities, onRefresh }: { dossierId: string; sources: Source[]; evidence: EvidenceItem[]; entities: DossierEntity[]; onRefresh?: () => void }) {
   const [url, setUrl] = useState('')
   const [title, setTitle] = useState('')
   const [authorHandle, setAuthorHandle] = useState('')
+  const [authorEntityId, setAuthorEntityId] = useState('')
   const [observedAt, setObservedAt] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -749,12 +838,14 @@ function SourcesTab({ dossierId, sources, evidence, onRefresh }: { dossierId: st
       await postJson(`/dossiers/${dossierId}/sources/url`, {
         url,
         title: title || undefined,
-        authorHandle: authorHandle || undefined,
+        authorHandle: authorEntityId ? undefined : authorHandle || undefined,
+        authorEntityId: authorEntityId || null,
         observedAt: fromDateTimeLocal(observedAt),
       })
       setUrl('')
       setTitle('')
       setAuthorHandle('')
+      setAuthorEntityId('')
       setObservedAt('')
       onRefresh?.()
     } catch (err) {
@@ -768,7 +859,7 @@ function SourcesTab({ dossierId, sources, evidence, onRefresh }: { dossierId: st
     await deleteJson(`/sources/${source.id}`)
     onRefresh?.()
   }
-  const updateSource = async (source: Source, body: Partial<Source>) => {
+  const updateSource = async (source: Source, body: Partial<Source> & { clearAuthorEntity?: boolean }) => {
     await patchJson(`/sources/${source.id}`, body)
     onRefresh?.()
   }
@@ -785,12 +876,20 @@ function SourcesTab({ dossierId, sources, evidence, onRefresh }: { dossierId: st
           </Field>
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Author / handle">
-              <input className="input" value={authorHandle} onChange={(event) => setAuthorHandle(event.target.value)} placeholder="@account or author" />
+              <select className="input" value={authorEntityId} onChange={(event) => setAuthorEntityId(event.target.value)}>
+                <option value="">No linked entity</option>
+                {entities.map((entity) => (
+                  <option key={entity.id} value={entity.id}>{entity.name}{entity.handle ? ` (${entity.handle})` : ''}</option>
+                ))}
+              </select>
             </Field>
             <Field label="Observed">
               <input className="input" type="datetime-local" value={observedAt} onChange={(event) => setObservedAt(event.target.value)} />
             </Field>
           </div>
+          <Field label="Fallback author / handle">
+            <input className="input" value={authorHandle} onChange={(event) => setAuthorHandle(event.target.value)} placeholder="@account or author when no entity exists yet" disabled={!!authorEntityId} />
+          </Field>
           <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
             X/Twitter and other terms-sensitive URLs default to manual original-media collection unless an official/API route is configured.
           </div>
@@ -813,20 +912,42 @@ function SourcesTab({ dossierId, sources, evidence, onRefresh }: { dossierId: st
                 </Badge>
               </div>
               <p className="mt-2 break-all text-sm font-medium">{source.title || source.url}</p>
-              {source.authorHandle && <p className="mt-1 text-sm text-zinc-600">{source.authorHandle}</p>}
+              {(source.authorEntityId || source.authorHandle) && <p className="mt-1 text-sm text-zinc-600">{sourceAuthorLabel(source, entities)}</p>}
               <p className="mt-1 text-sm text-zinc-600">{source.notes}</p>
               <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                <input className="input" defaultValue={source.title || ''} onBlur={(event) => updateSource(source, { title: event.target.value })} placeholder="Title" />
-                <input className="input" defaultValue={source.authorHandle || ''} onBlur={(event) => updateSource(source, { authorHandle: event.target.value })} placeholder="Author or handle" />
-                <input className="input" defaultValue={source.platform || ''} onBlur={(event) => updateSource(source, { platform: event.target.value })} placeholder="Platform" />
-                <select className="input" defaultValue={source.collectionStatus} onChange={(event) => updateSource(source, { collectionStatus: event.target.value })}>
-                  {sourceStatuses.map((value) => <option key={value}>{value}</option>)}
-                </select>
-                <input className="input" type="datetime-local" defaultValue={toDateTimeLocal(source.observedAt)} onBlur={(event) => updateSource(source, { observedAt: fromDateTimeLocal(event.target.value) })} />
-                <input className="input" type="datetime-local" defaultValue={toDateTimeLocal(source.firstSeenAt)} onBlur={(event) => updateSource(source, { firstSeenAt: fromDateTimeLocal(event.target.value) })} />
+                <Field label="Source title">
+                  <input className="input" defaultValue={source.title || ''} onBlur={(event) => updateSource(source, { title: event.target.value })} placeholder="Title" />
+                </Field>
+                <Field label="Author entity">
+                  <select className="input" defaultValue={source.authorEntityId || ''} onChange={(event) => updateSource(source, event.target.value ? { authorEntityId: event.target.value } : { clearAuthorEntity: true })}>
+                    <option value="">No linked entity</option>
+                    {entities.map((entity) => (
+                      <option key={entity.id} value={entity.id}>{entity.name}{entity.handle ? ` (${entity.handle})` : ''}</option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="Fallback author / handle">
+                  <input className="input" defaultValue={source.authorHandle || ''} onBlur={(event) => updateSource(source, { authorHandle: event.target.value })} placeholder="Author or handle" />
+                </Field>
+                <Field label="Platform">
+                  <input className="input" defaultValue={source.platform || ''} onBlur={(event) => updateSource(source, { platform: event.target.value })} placeholder="Platform" />
+                </Field>
+                <Field label="Collection status">
+                  <select className="input" defaultValue={source.collectionStatus} onChange={(event) => updateSource(source, { collectionStatus: event.target.value })}>
+                    {sourceStatuses.map((value) => <option key={value}>{value}</option>)}
+                  </select>
+                </Field>
+                <Field label="Observed at">
+                  <input className="input" type="datetime-local" defaultValue={toDateTimeLocal(source.observedAt)} onBlur={(event) => updateSource(source, { observedAt: fromDateTimeLocal(event.target.value) })} />
+                </Field>
+                <Field label="First seen at">
+                  <input className="input" type="datetime-local" defaultValue={toDateTimeLocal(source.firstSeenAt)} onBlur={(event) => updateSource(source, { firstSeenAt: fromDateTimeLocal(event.target.value) })} />
+                </Field>
               </div>
               <div className="mt-2 grid gap-2 sm:grid-cols-[1fr_auto]">
-                <input className="input" defaultValue={source.notes || ''} onBlur={(event) => updateSource(source, { notes: event.target.value })} placeholder="Collection notes" />
+                <Field label="Collection notes">
+                  <input className="input" defaultValue={source.notes || ''} onBlur={(event) => updateSource(source, { notes: event.target.value })} placeholder="Collection notes" />
+                </Field>
                 <button className="btn-secondary" type="button" onClick={() => remove(source)}>
                   <Trash2 size={16} aria-hidden="true" />
                   Delete
@@ -1084,20 +1205,32 @@ function EntityRelationRow({ relation, entities, onUpdate, onDelete }: { relatio
       {relation.evidenceBasis && <p className="mt-1 text-sm text-zinc-600">{relation.evidenceBasis}</p>}
       {relation.notes && <p className="mt-1 text-sm text-zinc-500">{relation.notes}</p>}
       <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
-        <select className="input" defaultValue={relation.fromEntityId} onChange={(event) => onUpdate({ fromEntityId: event.target.value })}>
-          {entities.map((entity) => <option key={entity.id} value={entity.id}>{entity.name}</option>)}
-        </select>
-        <select className="input" defaultValue={relation.toEntityId} onChange={(event) => onUpdate({ toEntityId: event.target.value })}>
-          {entities.map((entity) => <option key={entity.id} value={entity.id}>{entity.name}</option>)}
-        </select>
-        <input className="input" list="entity-relation-types" defaultValue={relation.relationType} onBlur={(event) => onUpdate({ relationType: event.target.value })} />
-        <select className="input" defaultValue={relation.confidence} onChange={(event) => onUpdate({ confidence: event.target.value })}>
-          {confidenceLevels.map((value) => <option key={value}>{value}</option>)}
-        </select>
+        <Field label="From entity">
+          <select className="input" defaultValue={relation.fromEntityId} onChange={(event) => onUpdate({ fromEntityId: event.target.value })}>
+            {entities.map((entity) => <option key={entity.id} value={entity.id}>{entity.name}</option>)}
+          </select>
+        </Field>
+        <Field label="To entity">
+          <select className="input" defaultValue={relation.toEntityId} onChange={(event) => onUpdate({ toEntityId: event.target.value })}>
+            {entities.map((entity) => <option key={entity.id} value={entity.id}>{entity.name}</option>)}
+          </select>
+        </Field>
+        <Field label="Relation type">
+          <input className="input" list="entity-relation-types" defaultValue={relation.relationType} onBlur={(event) => onUpdate({ relationType: event.target.value })} />
+        </Field>
+        <Field label="Confidence">
+          <select className="input" defaultValue={relation.confidence} onChange={(event) => onUpdate({ confidence: event.target.value })}>
+            {confidenceLevels.map((value) => <option key={value}>{value}</option>)}
+          </select>
+        </Field>
       </div>
       <div className="mt-2 grid gap-2 lg:grid-cols-[1fr_1fr_auto]">
-        <textarea className="input min-h-16" defaultValue={relation.evidenceBasis || ''} onBlur={(event) => onUpdate({ evidenceBasis: event.target.value })} placeholder="Evidence basis" />
-        <textarea className="input min-h-16" defaultValue={relation.notes || ''} onBlur={(event) => onUpdate({ notes: event.target.value })} placeholder="Notes" />
+        <Field label="Evidence basis">
+          <textarea className="input min-h-16" defaultValue={relation.evidenceBasis || ''} onBlur={(event) => onUpdate({ evidenceBasis: event.target.value })} placeholder="Evidence basis" />
+        </Field>
+        <Field label="Notes">
+          <textarea className="input min-h-16" defaultValue={relation.notes || ''} onBlur={(event) => onUpdate({ notes: event.target.value })} placeholder="Notes" />
+        </Field>
         <button className="btn-secondary self-start" type="button" onClick={onDelete}>
           <Trash2 size={16} />
           Delete
@@ -1120,19 +1253,33 @@ function EntityCard({ entity, relationCount, onUpdate, onDelete }: { entity: Dos
       {entity.url && <p className="mt-1 break-all text-xs text-zinc-500">{entity.url}</p>}
       {entity.notes && <p className="mt-2 text-sm text-zinc-600">{entity.notes}</p>}
       <div className="mt-3 grid gap-2 sm:grid-cols-2">
-        <select className="input" defaultValue={entity.kind} onChange={(event) => onUpdate({ kind: event.target.value })}>
-          {entityKinds.map((value) => <option key={value}>{value}</option>)}
-        </select>
-        <select className="input" defaultValue={entity.confidence} onChange={(event) => onUpdate({ confidence: event.target.value })}>
-          {confidenceLevels.map((value) => <option key={value}>{value}</option>)}
-        </select>
-        <input className="input" defaultValue={entity.name} onBlur={(event) => onUpdate({ name: event.target.value })} placeholder="Name" />
-        <input className="input" defaultValue={entity.handle || ''} onBlur={(event) => onUpdate({ handle: event.target.value })} placeholder="Handle" />
-        <input className="input" defaultValue={entity.platform || ''} onBlur={(event) => onUpdate({ platform: event.target.value })} placeholder="Platform" />
-        <input className="input" defaultValue={entity.url || ''} onBlur={(event) => onUpdate({ url: event.target.value })} placeholder="URL" />
+        <Field label="Entity kind">
+          <select className="input" defaultValue={entity.kind} onChange={(event) => onUpdate({ kind: event.target.value })}>
+            {entityKinds.map((value) => <option key={value}>{value}</option>)}
+          </select>
+        </Field>
+        <Field label="Confidence">
+          <select className="input" defaultValue={entity.confidence} onChange={(event) => onUpdate({ confidence: event.target.value })}>
+            {confidenceLevels.map((value) => <option key={value}>{value}</option>)}
+          </select>
+        </Field>
+        <Field label="Name">
+          <input className="input" defaultValue={entity.name} onBlur={(event) => onUpdate({ name: event.target.value })} placeholder="Name" />
+        </Field>
+        <Field label="Handle">
+          <input className="input" defaultValue={entity.handle || ''} onBlur={(event) => onUpdate({ handle: event.target.value })} placeholder="Handle" />
+        </Field>
+        <Field label="Platform">
+          <input className="input" defaultValue={entity.platform || ''} onBlur={(event) => onUpdate({ platform: event.target.value })} placeholder="Platform" />
+        </Field>
+        <Field label="URL">
+          <input className="input" defaultValue={entity.url || ''} onBlur={(event) => onUpdate({ url: event.target.value })} placeholder="URL" />
+        </Field>
       </div>
       <div className="mt-2 grid gap-2 sm:grid-cols-[1fr_auto]">
-        <input className="input" defaultValue={entity.notes || ''} onBlur={(event) => onUpdate({ notes: event.target.value })} placeholder="Notes" />
+        <Field label="Notes">
+          <input className="input" defaultValue={entity.notes || ''} onBlur={(event) => onUpdate({ notes: event.target.value })} placeholder="Notes" />
+        </Field>
         <button className="btn-secondary" type="button" onClick={onDelete}>
           <Trash2 size={16} />
           Delete
@@ -1264,6 +1411,9 @@ function FindingsTab({ dossierId, findings, evidence, onRefresh }: { dossierId: 
       status: finding.direction === 'Inconclusive' ? 'Weak' : 'Plausible',
       confidence: finding.confidence,
       rationale: `${finding.evidence}\n\nLimitations: ${finding.limitations}`,
+      evidenceItemId: finding.evidenceItemId || null,
+      evidenceStance: stanceFromFindingDirection(finding.direction),
+      evidenceNote: finding.evidence,
     })
     onRefresh?.()
   }
@@ -1370,34 +1520,52 @@ export function FindingCard({ finding, evidence = [], onPromote, onDelete, onUpd
           {onUpdate && (
             <>
               <div className="grid gap-2 sm:grid-cols-3">
-                <select className="input" defaultValue={finding.category} onChange={(event) => onUpdate({ category: event.target.value })}>
-                  {findingCategories.map((value) => <option key={value}>{value}</option>)}
-                </select>
-                <select className="input" defaultValue={finding.confidence} onChange={(event) => onUpdate({ confidence: event.target.value })}>
-                  {confidenceLevels.map((value) => <option key={value}>{value}</option>)}
-                </select>
-                <select className="input" defaultValue={finding.direction} onChange={(event) => onUpdate({ direction: event.target.value })}>
-                  {findingDirections.map((value) => <option key={value}>{value}</option>)}
-                </select>
+                <Field label="Category">
+                  <select className="input" defaultValue={finding.category} onChange={(event) => onUpdate({ category: event.target.value })}>
+                    {findingCategories.map((value) => <option key={value}>{value}</option>)}
+                  </select>
+                </Field>
+                <Field label="Confidence">
+                  <select className="input" defaultValue={finding.confidence} onChange={(event) => onUpdate({ confidence: event.target.value })}>
+                    {confidenceLevels.map((value) => <option key={value}>{value}</option>)}
+                  </select>
+                </Field>
+                <Field label="Direction">
+                  <select className="input" defaultValue={finding.direction} onChange={(event) => onUpdate({ direction: event.target.value })}>
+                    {findingDirections.map((value) => <option key={value}>{value}</option>)}
+                  </select>
+                </Field>
               </div>
               {evidence.length > 0 && (
                 <div className="grid gap-2 sm:grid-cols-2">
-                  <select className="input" defaultValue={finding.evidenceItemId || ''} onChange={(event) => event.target.value && onUpdate({ evidenceItemId: event.target.value })}>
-                    <option value="">No evidence link</option>
-                    {evidence.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}
-                  </select>
-                  {analysisRuns.length > 0 && (
-                    <select className="input" defaultValue={finding.analysisRunId || ''} onChange={(event) => event.target.value && onUpdate({ analysisRunId: event.target.value })}>
-                      <option value="">No analysis-run link</option>
-                      {analysisRuns.map((run) => <option key={run.id} value={run.id}>{run.pipeline} - {run.status}</option>)}
+                  <Field label="Linked evidence">
+                    <select className="input" defaultValue={finding.evidenceItemId || ''} onChange={(event) => event.target.value && onUpdate({ evidenceItemId: event.target.value })}>
+                      <option value="">No evidence link</option>
+                      {evidence.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}
                     </select>
+                  </Field>
+                  {analysisRuns.length > 0 && (
+                    <Field label="Linked analysis run">
+                      <select className="input" defaultValue={finding.analysisRunId || ''} onChange={(event) => event.target.value && onUpdate({ analysisRunId: event.target.value })}>
+                        <option value="">No analysis-run link</option>
+                        {analysisRuns.map((run) => <option key={run.id} value={run.id}>{run.pipeline} - {run.status}</option>)}
+                      </select>
+                    </Field>
                   )}
                 </div>
               )}
-              <textarea className="input min-h-16" defaultValue={finding.claim} onBlur={(event) => onUpdate({ claim: event.target.value })} />
-              <textarea className="input min-h-16" defaultValue={finding.evidence} onBlur={(event) => onUpdate({ evidence: event.target.value })} />
-              <textarea className="input min-h-16" defaultValue={finding.limitations} onBlur={(event) => onUpdate({ limitations: event.target.value })} />
-              <textarea className="input min-h-16" defaultValue={finding.falsificationPath} onBlur={(event) => onUpdate({ falsificationPath: event.target.value })} />
+              <Field label="Finding claim">
+                <textarea className="input min-h-16" defaultValue={finding.claim} onBlur={(event) => onUpdate({ claim: event.target.value })} />
+              </Field>
+              <Field label="Evidence basis">
+                <textarea className="input min-h-16" defaultValue={finding.evidence} onBlur={(event) => onUpdate({ evidence: event.target.value })} />
+              </Field>
+              <Field label="Limitations">
+                <textarea className="input min-h-16" defaultValue={finding.limitations} onBlur={(event) => onUpdate({ limitations: event.target.value })} />
+              </Field>
+              <Field label="Falsification path">
+                <textarea className="input min-h-16" defaultValue={finding.falsificationPath} onBlur={(event) => onUpdate({ falsificationPath: event.target.value })} />
+              </Field>
             </>
           )}
           {onPromote && (
@@ -1418,17 +1586,31 @@ export function FindingCard({ finding, evidence = [], onPromote, onDelete, onUpd
   )
 }
 
-function ClaimsTab({ dossierId, claims, onRefresh }: { dossierId: string; claims: Claim[]; onRefresh?: () => void }) {
+function ClaimsTab({ dossierId, claims, evidence, onRefresh }: { dossierId: string; claims: Claim[]; evidence: EvidenceItem[]; onRefresh?: () => void }) {
   const [text, setText] = useState('')
   const [status, setStatus] = useState('Unassessed')
   const [confidence, setConfidence] = useState('None')
   const [rationale, setRationale] = useState('')
+  const [evidenceItemId, setEvidenceItemId] = useState('')
+  const [evidenceStance, setEvidenceStance] = useState('Supports')
+  const [evidenceNote, setEvidenceNote] = useState('')
   const add = async (event: FormEvent) => {
     event.preventDefault()
     if (!text.trim()) return
-    await postJson(`/dossiers/${dossierId}/claims`, { text, status, confidence, rationale })
+    await postJson(`/dossiers/${dossierId}/claims`, {
+      text,
+      status,
+      confidence,
+      rationale,
+      evidenceItemId: evidenceItemId || null,
+      evidenceStance,
+      evidenceNote,
+    })
     setText('')
     setRationale('')
+    setEvidenceItemId('')
+    setEvidenceStance('Supports')
+    setEvidenceNote('')
     onRefresh?.()
   }
   const update = async (claim: Claim, next: Partial<Claim>) => {
@@ -1438,6 +1620,19 @@ function ClaimsTab({ dossierId, claims, onRefresh }: { dossierId: string; claims
   const remove = async (claim: Claim) => {
     if (!window.confirm('Delete this claim?')) return
     await deleteJson(`/claims/${claim.id}`)
+    onRefresh?.()
+  }
+  const linkEvidence = async (claim: Claim, evidenceId: string, stance: string, note: string) => {
+    if (!evidenceId) return
+    await postJson(`/claims/${claim.id}/evidence`, { evidenceItemId: evidenceId, stance, note })
+    onRefresh?.()
+  }
+  const updateLink = async (linkId: string, body: { stance?: string; note?: string }) => {
+    await patchJson(`/claim-evidence-links/${linkId}`, body)
+    onRefresh?.()
+  }
+  const removeLink = async (linkId: string) => {
+    await deleteJson(`/claim-evidence-links/${linkId}`)
     onRefresh?.()
   }
   return (
@@ -1462,6 +1657,25 @@ function ClaimsTab({ dossierId, claims, onRefresh }: { dossierId: string; claims
           <Field label="Rationale">
             <textarea className="input min-h-20" value={rationale} onChange={(event) => setRationale(event.target.value)} placeholder="Evidence basis and caveats" />
           </Field>
+          <div className="rounded-md border border-zinc-300 bg-white p-3">
+            <div className="mb-2 text-xs font-semibold uppercase text-zinc-500">Optional initial evidence</div>
+            <div className="grid gap-3">
+              <Field label="Evidence item">
+                <select className="input" value={evidenceItemId} onChange={(event) => setEvidenceItemId(event.target.value)}>
+                  <option value="">No evidence link</option>
+                  {evidence.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}
+                </select>
+              </Field>
+              <Field label="Evidence stance">
+                <select className="input" value={evidenceStance} onChange={(event) => setEvidenceStance(event.target.value)} disabled={!evidenceItemId}>
+                  {evidenceStances.map((value) => <option key={value}>{value}</option>)}
+                </select>
+              </Field>
+              <Field label="Evidence note">
+                <textarea className="input min-h-16" value={evidenceNote} onChange={(event) => setEvidenceNote(event.target.value)} placeholder="Why this evidence supports, weakens, or contextualizes the claim" disabled={!evidenceItemId} />
+              </Field>
+            </div>
+          </div>
           <button className="btn-primary" type="submit">
             <Plus size={16} />
             Add claim
@@ -1479,15 +1693,26 @@ function ClaimsTab({ dossierId, claims, onRefresh }: { dossierId: string; claims
               <p className="text-sm font-semibold">{claim.text}</p>
               {claim.rationale && <p className="mt-1 text-sm text-zinc-600">{claim.rationale}</p>}
               <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                <select className="input" defaultValue={claim.status} onChange={(event) => update(claim, { status: event.target.value })}>
-                  {claimStatuses.map((value) => <option key={value}>{value}</option>)}
-                </select>
-                <select className="input" defaultValue={claim.confidence} onChange={(event) => update(claim, { confidence: event.target.value })}>
-                  {confidenceLevels.map((value) => <option key={value}>{value}</option>)}
-                </select>
+                <Field label="Claim status">
+                  <select className="input" defaultValue={claim.status} onChange={(event) => update(claim, { status: event.target.value })}>
+                    {claimStatuses.map((value) => <option key={value}>{value}</option>)}
+                  </select>
+                </Field>
+                <Field label="Confidence">
+                  <select className="input" defaultValue={claim.confidence} onChange={(event) => update(claim, { confidence: event.target.value })}>
+                    {confidenceLevels.map((value) => <option key={value}>{value}</option>)}
+                  </select>
+                </Field>
               </div>
-              <textarea className="input mt-2 min-h-16" defaultValue={claim.text} onBlur={(event) => update(claim, { text: event.target.value })} placeholder="Claim text" />
-              <textarea className="input mt-2 min-h-16" defaultValue={claim.rationale || ''} onBlur={(event) => update(claim, { rationale: event.target.value })} placeholder="Rationale and caveats" />
+              <div className="mt-2 space-y-2">
+                <Field label="Claim text">
+                  <textarea className="input min-h-16" defaultValue={claim.text} onBlur={(event) => update(claim, { text: event.target.value })} placeholder="Claim text" />
+                </Field>
+                <Field label="Rationale and caveats">
+                  <textarea className="input min-h-16" defaultValue={claim.rationale || ''} onBlur={(event) => update(claim, { rationale: event.target.value })} placeholder="Rationale and caveats" />
+                </Field>
+              </div>
+              <ClaimEvidenceManager claim={claim} evidence={evidence} onAdd={(evidenceId, stance, note) => linkEvidence(claim, evidenceId, stance, note)} onUpdate={updateLink} onDelete={removeLink} />
               <div className="mt-2 flex flex-wrap gap-2">
                 <button className="btn-secondary" type="button" onClick={() => remove(claim)}>
                   <Trash2 size={16} />
@@ -1499,6 +1724,95 @@ function ClaimsTab({ dossierId, claims, onRefresh }: { dossierId: string; claims
           {claims.length === 0 && <Empty text="No claims yet." />}
         </div>
       </Panel>
+    </div>
+  )
+}
+
+function ClaimEvidenceManager({
+  claim,
+  evidence,
+  onAdd,
+  onUpdate,
+  onDelete,
+}: {
+  claim: Claim
+  evidence: EvidenceItem[]
+  onAdd: (evidenceItemId: string, stance: string, note: string) => void
+  onUpdate: (linkId: string, body: { stance?: string; note?: string }) => void
+  onDelete: (linkId: string) => void
+}) {
+  const [evidenceItemId, setEvidenceItemId] = useState('')
+  const [stance, setStance] = useState('Supports')
+  const [note, setNote] = useState('')
+  const linkedIds = new Set((claim.evidenceLinks || []).map((link) => link.evidenceItemId))
+  const availableEvidence = evidence.filter((item) => !linkedIds.has(item.id))
+
+  const add = () => {
+    if (!evidenceItemId) return
+    onAdd(evidenceItemId, stance, note)
+    setEvidenceItemId('')
+    setStance('Supports')
+    setNote('')
+  }
+
+  return (
+    <div className="mt-3 rounded-md border border-zinc-300 bg-zinc-50 p-3">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <div className="text-xs font-semibold uppercase text-zinc-500">Claim evidence</div>
+        <Badge tone={(claim.evidenceLinks || []).length > 0 ? 'green' : 'zinc'}>{(claim.evidenceLinks || []).length} linked</Badge>
+      </div>
+      <div className="grid gap-2">
+        {(claim.evidenceLinks || []).map((link) => {
+          const item = evidence.find((entry) => entry.id === link.evidenceItemId)
+          return (
+            <div key={link.id} className="rounded-md border border-zinc-300 bg-white p-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-semibold">{item?.title || 'Evidence item'}</div>
+                  <div className="text-xs text-zinc-500">{item?.type || 'Evidence'} {item?.contentHashSha256 ? `- ${item.contentHashSha256.slice(0, 12)}` : ''}</div>
+                </div>
+                <Badge tone={link.stance === 'Supports' ? 'green' : link.stance === 'Contradicts' ? 'amber' : 'zinc'}>{link.stance}</Badge>
+              </div>
+              <div className="mt-2 grid gap-2 sm:grid-cols-[180px_1fr_auto]">
+                <Field label="Stance">
+                  <select className="input" defaultValue={link.stance} onChange={(event) => onUpdate(link.id, { stance: event.target.value })}>
+                    {evidenceStances.map((value) => <option key={value}>{value}</option>)}
+                  </select>
+                </Field>
+                <Field label="Note">
+                  <input className="input" defaultValue={link.note || ''} onBlur={(event) => onUpdate(link.id, { note: event.target.value })} placeholder="Evidence relevance" />
+                </Field>
+                <button className="icon-btn self-end" type="button" onClick={() => onDelete(link.id)} title="Unlink evidence">
+                  <Trash2 size={16} />
+                </button>
+              </div>
+            </div>
+          )
+        })}
+        {(claim.evidenceLinks || []).length === 0 && <Empty text="No evidence linked to this claim." />}
+      </div>
+      <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_160px]">
+        <Field label="Add evidence">
+          <select className="input" value={evidenceItemId} onChange={(event) => setEvidenceItemId(event.target.value)}>
+            <option value="">Choose evidence</option>
+            {availableEvidence.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}
+          </select>
+        </Field>
+        <Field label="Stance">
+          <select className="input" value={stance} onChange={(event) => setStance(event.target.value)}>
+            {evidenceStances.map((value) => <option key={value}>{value}</option>)}
+          </select>
+        </Field>
+      </div>
+      <div className="mt-2 grid gap-2 sm:grid-cols-[1fr_auto]">
+        <Field label="Evidence note">
+          <input className="input" value={note} onChange={(event) => setNote(event.target.value)} placeholder="Why this evidence matters to the claim" />
+        </Field>
+        <button className="btn-secondary self-end" type="button" disabled={!evidenceItemId} onClick={add}>
+          <Plus size={16} />
+          Link evidence
+        </button>
+      </div>
     </div>
   )
 }
@@ -1595,22 +1909,32 @@ function TaskRow({ task, onDone, onStatus, onUpdate, onDelete }: { task: Investi
       {(onStatus || onUpdate || onDelete) && (
         <div className="mt-3 space-y-2">
           {onStatus && (
-            <select className="input max-w-44" defaultValue={task.status} onChange={(event) => onStatus(event.target.value)}>
-              {taskStatuses.map((value) => <option key={value}>{value}</option>)}
-            </select>
+            <Field label="Task status">
+              <select className="input max-w-44" defaultValue={task.status} onChange={(event) => onStatus(event.target.value)}>
+                {taskStatuses.map((value) => <option key={value}>{value}</option>)}
+              </select>
+            </Field>
           )}
           {onUpdate && (
             <>
               <div className="grid gap-2 sm:grid-cols-2">
-                <input className="input" defaultValue={task.title} onBlur={(event) => onUpdate({ title: event.target.value })} placeholder="Task title" />
-                <select className="input" defaultValue={task.priority} onChange={(event) => onUpdate({ priority: event.target.value })}>
-                  {priorities.map((value) => <option key={value}>{value}</option>)}
-                </select>
-                <select className="input" defaultValue={task.taskType} onChange={(event) => onUpdate({ taskType: event.target.value })}>
-                  {taskTypes.map((value) => <option key={value}>{value}</option>)}
-                </select>
+                <Field label="Task title">
+                  <input className="input" defaultValue={task.title} onBlur={(event) => onUpdate({ title: event.target.value })} placeholder="Task title" />
+                </Field>
+                <Field label="Priority">
+                  <select className="input" defaultValue={task.priority} onChange={(event) => onUpdate({ priority: event.target.value })}>
+                    {priorities.map((value) => <option key={value}>{value}</option>)}
+                  </select>
+                </Field>
+                <Field label="Task type">
+                  <select className="input" defaultValue={task.taskType} onChange={(event) => onUpdate({ taskType: event.target.value })}>
+                    {taskTypes.map((value) => <option key={value}>{value}</option>)}
+                  </select>
+                </Field>
               </div>
-              <textarea className="input min-h-16" defaultValue={task.description || ''} onBlur={(event) => onUpdate({ description: event.target.value })} placeholder="Description" />
+              <Field label="Description">
+                <textarea className="input min-h-16" defaultValue={task.description || ''} onBlur={(event) => onUpdate({ description: event.target.value })} placeholder="Description" />
+              </Field>
             </>
           )}
           {onDelete && (
@@ -1815,7 +2139,7 @@ function EvidenceDetailPage() {
     }
   }, [dossierId, evidenceItemId])
 
-  const run = async (pipeline: 'image' | 'video') => {
+  const run = async (pipeline: 'image' | 'video' | 'text') => {
     if (!evidenceItemId) return
     await postEmpty(`/evidence/${evidenceItemId}/analysis/${pipeline}`)
     await load()
@@ -1837,6 +2161,8 @@ function EvidenceDetailPage() {
   const item = state.data
   const latestArtifacts = item.analysisRuns.flatMap((runItem) => runItem.artifacts)
   const selectedArtifact = latestArtifacts.find((artifact) => artifact.id === selectedArtifactId)
+  const filePath = item.fileUrl.replace('/api', '')
+  const canPreviewText = item.type === 'Text' || item.mimeType?.startsWith('text/') || item.mimeType?.includes('json')
   return (
     <div>
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -1846,29 +2172,47 @@ function EvidenceDetailPage() {
         </button>
         <span className="text-sm text-zinc-600">{item.title}</span>
       </div>
-      <div className="grid lg:grid-cols-[420px_1fr]">
+      <div className="grid items-start lg:grid-cols-[420px_1fr]">
       <Panel title="Evidence Preview" icon={<Fingerprint size={17} />}>
         <div className="rounded-md border border-zinc-300 bg-zinc-100 p-2">
           {item.type === 'Image' ? (
-            <img className="max-h-[360px] w-full rounded object-contain" src={apiUrl(item.fileUrl.replace('/api', ''))} alt={item.title} />
+            <img className="max-h-[360px] w-full rounded object-contain" src={apiUrl(filePath)} alt={item.title} />
           ) : item.type === 'Video' ? (
-            <video className="max-h-[360px] w-full rounded" controls src={apiUrl(item.fileUrl.replace('/api', ''))} />
+            <video className="max-h-[360px] w-full rounded" controls src={apiUrl(filePath)} />
+          ) : canPreviewText ? (
+            <TextEvidencePreview path={filePath} />
           ) : (
-            <a className="btn-secondary" href={apiUrl(item.fileUrl.replace('/api', ''))}>
+            <a className="btn-secondary" href={apiUrl(filePath)}>
               <FileDown size={16} />
               Download file
             </a>
           )}
         </div>
         <div className="mt-3 flex flex-wrap gap-2">
-          <button className="btn-primary" type="button" onClick={() => run('image')}>
-            <ImageIcon size={16} />
-            Run image analysis
-          </button>
-          <button className="btn-secondary" type="button" onClick={() => run('video')}>
-            <Video size={16} />
-            Run video analysis
-          </button>
+          {item.type === 'Image' && (
+            <button className="btn-primary" type="button" onClick={() => run('image')}>
+              <ImageIcon size={16} />
+              Run image analysis
+            </button>
+          )}
+          {item.type === 'Video' && (
+            <button className="btn-primary" type="button" onClick={() => run('video')}>
+              <Video size={16} />
+              Run video analysis
+            </button>
+          )}
+          {canPreviewText && (
+            <>
+              <button className="btn-primary" type="button" onClick={() => run('text')}>
+                <Type size={16} />
+                Run text analysis again
+              </button>
+              <a className="btn-secondary" href={apiUrl(filePath)}>
+                <FileDown size={16} />
+                Download text
+              </a>
+            </>
+          )}
           <button className="btn-secondary" type="button" onClick={remove}>
             <Trash2 size={16} />
             Delete evidence
@@ -1879,20 +2223,34 @@ function EvidenceDetailPage() {
         <Panel title={item.title} icon={<FileJson size={17} />}>
           <MetadataGrid item={item} />
           <div className="mt-3 grid gap-2 sm:grid-cols-2">
-            <input className="input" defaultValue={item.title} onBlur={(event) => updateEvidence({ title: event.target.value })} />
-            <select className="input" defaultValue={item.type} onChange={(event) => updateEvidence({ type: event.target.value })}>
-              {evidenceTypes.map((value) => <option key={value}>{value}</option>)}
-            </select>
-            <select className="input" defaultValue={item.provenanceStatus} onChange={(event) => updateEvidence({ provenanceStatus: event.target.value })}>
-              {provenanceStatuses.map((value) => <option key={value}>{value}</option>)}
-            </select>
-            <input className="input" type="datetime-local" defaultValue={toDateTimeLocal(item.capturedAt)} onBlur={(event) => updateEvidence({ capturedAt: fromDateTimeLocal(event.target.value) })} />
-            <select className="input" defaultValue={item.sourceId || ''} onChange={(event) => updateEvidence(event.target.value ? { sourceId: event.target.value } : { clearSource: true })}>
-              <option value="">No linked source</option>
-              {sources.map((source) => <option key={source.id} value={source.id}>{source.platform || source.type}: {source.title || source.url}</option>)}
-            </select>
+            <Field label="Evidence title">
+              <input className="input" defaultValue={item.title} onBlur={(event) => updateEvidence({ title: event.target.value })} />
+            </Field>
+            <Field label="Evidence type">
+              <select className="input" defaultValue={item.type} onChange={(event) => updateEvidence({ type: event.target.value })}>
+                {evidenceTypes.map((value) => <option key={value}>{value}</option>)}
+              </select>
+            </Field>
+            <Field label="Provenance status">
+              <select className="input" defaultValue={item.provenanceStatus} onChange={(event) => updateEvidence({ provenanceStatus: event.target.value })}>
+                {provenanceStatuses.map((value) => <option key={value}>{value}</option>)}
+              </select>
+            </Field>
+            <Field label="Captured at">
+              <input className="input" type="datetime-local" defaultValue={toDateTimeLocal(item.capturedAt)} onBlur={(event) => updateEvidence({ capturedAt: fromDateTimeLocal(event.target.value) })} />
+            </Field>
+            <Field label="Linked source">
+              <select className="input" defaultValue={item.sourceId || ''} onChange={(event) => updateEvidence(event.target.value ? { sourceId: event.target.value } : { clearSource: true })}>
+                <option value="">No linked source</option>
+                {sources.map((source) => <option key={source.id} value={source.id}>{source.platform || source.type}: {source.title || source.url}</option>)}
+              </select>
+            </Field>
           </div>
-          <textarea className="input mt-2 min-h-20" defaultValue={item.description || ''} onBlur={(event) => updateEvidence({ description: event.target.value })} placeholder="Evidence description and collection context" />
+          <div className="mt-2">
+            <Field label="Description">
+              <textarea className="input min-h-20" defaultValue={item.description || ''} onBlur={(event) => updateEvidence({ description: event.target.value })} placeholder="Evidence description and collection context" />
+            </Field>
+          </div>
         </Panel>
         <Panel title="Analysis Runs" icon={<Gauge size={17} />}>
           <div className="space-y-2">
@@ -1925,6 +2283,33 @@ function EvidenceDetailPage() {
       </div>
       {selectedArtifact && <ArtifactModal artifact={selectedArtifact} onClose={() => setSelectedArtifactId(null)} />}
     </div>
+  )
+}
+
+function TextEvidencePreview({ path }: { path: string }) {
+  const [state, setState] = useState<LoadState<string>>({ loading: true })
+
+  useEffect(() => {
+    let cancelled = false
+    getText(path)
+      .then((data) => {
+        if (!cancelled) setState({ loading: false, data })
+      })
+      .catch((error) => {
+        if (!cancelled) setState({ loading: false, error: String(error) })
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [path])
+
+  if (state.loading) return <InlineStatus icon={<Loader2 className="animate-spin" size={16} />} text="Loading text evidence" />
+  if (state.error) return <InlineStatus icon={<AlertTriangle size={16} />} text={state.error} tone="warning" />
+
+  return (
+    <pre className="max-h-[60vh] overflow-auto whitespace-pre-wrap rounded bg-black p-3 text-sm leading-6 text-zinc-100">
+      {state.data || 'No text content stored for this evidence item.'}
+    </pre>
   )
 }
 
@@ -2045,6 +2430,7 @@ function MetadataGrid({ item }: { item: EvidenceItem }) {
 }
 
 function AnalysisRunRow({ run }: { run: AnalysisRun }) {
+  const result = parseAnalysisResult(run.resultJson)
   return (
     <div className="rounded-md border border-zinc-300 bg-white p-3">
       <div className="flex flex-wrap items-center gap-2">
@@ -2053,6 +2439,19 @@ function AnalysisRunRow({ run }: { run: AnalysisRun }) {
         {run.toolVersion && <Badge>{run.toolVersion}</Badge>}
       </div>
       <p className="mt-2 text-sm text-zinc-600">{run.summary || run.error || 'No summary yet.'}</p>
+      {result && (
+        <div className="mt-3 rounded-md border border-zinc-300 bg-zinc-50 p-3 text-sm">
+          <div className="mb-2 text-xs font-semibold uppercase text-zinc-500">Result</div>
+          {result.signals?.length ? (
+            <ul className="list-disc space-y-1 pl-5 text-zinc-700">
+              {result.signals.map((signal) => <li key={signal}>{signal}</li>)}
+            </ul>
+          ) : (
+            <p className="text-zinc-700">{result.signalText || result.summary || 'No strong signals recorded.'}</p>
+          )}
+          {result.limitation && <p className="mt-2 text-xs text-zinc-500">{result.limitation}</p>}
+        </div>
+      )}
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <span className="text-xs text-zinc-500">{run.artifacts.length} artifacts</span>
         {run.artifacts.length > 0 && (
@@ -2064,6 +2463,21 @@ function AnalysisRunRow({ run }: { run: AnalysisRun }) {
       </div>
     </div>
   )
+}
+
+function parseAnalysisResult(resultJson?: string): { signals?: string[]; signalText?: string; summary?: string; limitation?: string } | null {
+  if (!resultJson) return null
+  try {
+    const parsed = JSON.parse(resultJson) as { signals?: unknown; signalText?: unknown; summary?: unknown; limitation?: unknown }
+    return {
+      signals: Array.isArray(parsed.signals) ? parsed.signals.filter((item): item is string => typeof item === 'string') : undefined,
+      signalText: typeof parsed.signalText === 'string' ? parsed.signalText : undefined,
+      summary: typeof parsed.summary === 'string' ? parsed.summary : undefined,
+      limitation: typeof parsed.limitation === 'string' ? parsed.limitation : undefined,
+    }
+  } catch {
+    return { signalText: resultJson }
+  }
 }
 
 function ReportPage() {
@@ -2092,30 +2506,54 @@ export function ReportView({ markdown, loading, error }: { markdown: string; loa
   )
 }
 
+type SettingsData = {
+  name?: string
+  collectionPolicy?: string
+  userAgent?: string
+  ethicalBoundaries?: string[]
+}
+
 function SettingsPage() {
-  const [state, setState] = useState<LoadState<Record<string, unknown>>>({ loading: true })
+  const [state, setState] = useState<LoadState<SettingsData>>({ loading: true })
   useEffect(() => {
-    getJson<Record<string, unknown>>('/settings')
+    getJson<SettingsData>('/settings')
       .then((data) => setState({ loading: false, data }))
       .catch((error) => setState({ loading: false, error: String(error) }))
   }, [])
-  return (
-    <Panel title="Settings" icon={<Settings size={17} />}>
-      {state.loading && <InlineStatus icon={<Loader2 className="animate-spin" size={16} />} text="Loading settings" />}
-      {state.error && <InlineStatus icon={<AlertTriangle size={16} />} text={state.error} tone="warning" />}
-      {state.data && <pre className="overflow-auto rounded-md border border-zinc-300 bg-white p-3 text-sm">{JSON.stringify(state.data, null, 2)}</pre>}
-    </Panel>
-  )
-}
 
-function Metric({ label, value, icon }: { label: string; value: number; icon: ReactNode }) {
+  const settings = state.data
   return (
-    <div className="rounded-md border border-zinc-300 bg-white p-4">
-      <div className="flex items-center justify-between">
-        <span className="text-sm text-zinc-600">{label}</span>
-        <span className="text-emerald-800">{icon}</span>
-      </div>
-      <div className="mt-2 text-2xl font-semibold">{value}</div>
+    <div className="grid gap-0 lg:grid-cols-[0.9fr_1.1fr]">
+      <Panel title="Workspace Settings" icon={<Settings size={17} />}>
+        {state.loading && <InlineStatus icon={<Loader2 className="animate-spin" size={16} />} text="Loading settings" />}
+        {state.error && <InlineStatus icon={<AlertTriangle size={16} />} text={state.error} tone="warning" />}
+        {settings && (
+          <div className="grid gap-3">
+            <StatusTile label="Application" value={settings.name || 'Veritas'} detail="local workbench" tone="green" />
+            <div className="rounded-md border border-zinc-300 bg-white p-3">
+              <div className="text-xs font-semibold uppercase text-zinc-500">Collection policy</div>
+              <p className="mt-2 text-sm text-zinc-700">{settings.collectionPolicy || 'No collection policy reported.'}</p>
+            </div>
+            <div className="rounded-md border border-zinc-300 bg-white p-3">
+              <div className="text-xs font-semibold uppercase text-zinc-500">Robots user agent</div>
+              <p className="mt-2 break-all font-mono text-sm text-zinc-700">{settings.userAgent || 'Not configured'}</p>
+            </div>
+          </div>
+        )}
+      </Panel>
+      <Panel title="Operating Boundaries" icon={<ShieldCheck size={17} />}>
+        {settings ? (
+          <div className="grid gap-2">
+            {(settings.ethicalBoundaries || []).map((boundary) => (
+              <div key={boundary} className="rounded-md border border-zinc-300 bg-white p-3 text-sm text-zinc-700">
+                {boundary}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <Empty text="Settings unavailable." />
+        )}
+      </Panel>
     </div>
   )
 }

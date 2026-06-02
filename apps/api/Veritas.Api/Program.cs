@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using System.Net.Sockets;
 using Veritas.Api.Endpoints;
 using Veritas.Infrastructure;
 using Veritas.Infrastructure.Persistence;
@@ -30,6 +31,22 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseCors("web");
+app.Use(async (context, next) =>
+{
+    try
+    {
+        await next();
+    }
+    catch (Exception ex) when (IsDatabaseUnavailable(ex))
+    {
+        context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+        await context.Response.WriteAsJsonAsync(new
+        {
+            error = "Database unavailable",
+            detail = "The API is running, but it cannot connect to the configured database. Start Postgres/Docker or switch the database provider before retrying."
+        });
+    }
+});
 app.MapVeritasEndpoints();
 
 if (app.Configuration.GetValue("Database:ApplyMigrations", false))
@@ -103,6 +120,76 @@ static async Task EnsureSqliteIncrementalSchemaAsync(VeritasDbContext db)
     await db.Database.ExecuteSqlRawAsync("""
         CREATE UNIQUE INDEX IF NOT EXISTS "IX_dossier_entity_relations_FromEntityId_ToEntityId_RelationType" ON "dossier_entity_relations" ("FromEntityId", "ToEntityId", "RelationType");
         """);
+    await db.Database.ExecuteSqlRawAsync("""
+        CREATE TABLE IF NOT EXISTS "claim_evidence_links" (
+            "Id" TEXT NOT NULL CONSTRAINT "PK_claim_evidence_links" PRIMARY KEY,
+            "ClaimId" TEXT NOT NULL,
+            "EvidenceItemId" TEXT NOT NULL,
+            "Stance" TEXT NOT NULL,
+            "Note" TEXT NULL,
+            "CreatedAt" TEXT NOT NULL,
+            CONSTRAINT "FK_claim_evidence_links_claims_ClaimId" FOREIGN KEY ("ClaimId") REFERENCES "claims" ("Id") ON DELETE CASCADE,
+            CONSTRAINT "FK_claim_evidence_links_evidence_items_EvidenceItemId" FOREIGN KEY ("EvidenceItemId") REFERENCES "evidence_items" ("Id") ON DELETE CASCADE
+        );
+        """);
+    await db.Database.ExecuteSqlRawAsync("""
+        CREATE INDEX IF NOT EXISTS "IX_claim_evidence_links_ClaimId" ON "claim_evidence_links" ("ClaimId");
+        """);
+    await db.Database.ExecuteSqlRawAsync("""
+        CREATE INDEX IF NOT EXISTS "IX_claim_evidence_links_EvidenceItemId" ON "claim_evidence_links" ("EvidenceItemId");
+        """);
+    await db.Database.ExecuteSqlRawAsync("""
+        CREATE UNIQUE INDEX IF NOT EXISTS "IX_claim_evidence_links_ClaimId_EvidenceItemId" ON "claim_evidence_links" ("ClaimId", "EvidenceItemId");
+        """);
+    if (!await SqliteColumnExistsAsync(db, "sources", "AuthorEntityId"))
+    {
+        await db.Database.ExecuteSqlRawAsync("""
+            ALTER TABLE "sources" ADD COLUMN "AuthorEntityId" TEXT NULL;
+            """);
+    }
+    await db.Database.ExecuteSqlRawAsync("""
+        CREATE INDEX IF NOT EXISTS "IX_sources_AuthorEntityId" ON "sources" ("AuthorEntityId");
+        """);
+}
+
+static async Task<bool> SqliteColumnExistsAsync(VeritasDbContext db, string tableName, string columnName)
+{
+    await using var command = db.Database.GetDbConnection().CreateCommand();
+    command.CommandText = $"PRAGMA table_info(\"{tableName.Replace("\"", "\"\"")}\")";
+    if (command.Connection?.State != System.Data.ConnectionState.Open)
+    {
+        await db.Database.OpenConnectionAsync();
+    }
+
+    await using var reader = await command.ExecuteReaderAsync();
+    while (await reader.ReadAsync())
+    {
+        if (string.Equals(reader.GetString(1), columnName, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+static bool IsDatabaseUnavailable(Exception exception)
+{
+    for (var current = exception; current is not null; current = current.InnerException!)
+    {
+        if (current is SocketException)
+        {
+            return true;
+        }
+
+        var typeName = current.GetType().FullName ?? current.GetType().Name;
+        if (typeName.StartsWith("Npgsql.", StringComparison.Ordinal))
+        {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 app.Run();
